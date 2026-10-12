@@ -10,6 +10,7 @@ DLQ и дашборд статуса доставки.
 
 - [docs/architecture.md](docs/architecture.md) — идея, компоненты,
   алгоритмы, гарантии, роадмап
+- [docs/tasks.md](docs/tasks.md) — бэклог тикетов
 - [PLAN.md](PLAN.md) — data flow события и журнал решений
 - [AGENTS.md](AGENTS.md) — правила работы над проектом (сплит 50/50)
 
