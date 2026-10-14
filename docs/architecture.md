@@ -68,6 +68,29 @@ events ───> │ Ingest   │─> │ Dedup      │─> │ Queue        �
 - Открытые вопросы границ (где именно может быть дубль/потеря) —
   см. `PLAN.md`.
 
+## Схема БД (стадия 1, реализовано)
+
+- `webhook_endpoints` — Url, Secret, RateLimitPerSecond, IsActive
+- `notification_events` — IdempotencyKey (unique), Payload (jsonb),
+  Status, AttemptCount, NextAttemptAt, DeliveredAt;
+  индекс `(Status, NextAttemptAt)` — скан должных ретраев
+- `delivery_attempts` — история попыток: код ответа, ошибка, длительность
+- `dead_letter_items` — Reason, DeadLetteredAt, ReplayedAt
+
+**Двойная защита от дублей:** Redis `SET NX` — быстрый фильтр (TTL-окно,
+ключи можно потерять при рестарте кеша); unique-индекс в PG — жёсткая
+граница: одинаковый `IdempotencyKey` не запишется дважды никогда.
+Первый слой — про скорость, второй — про корректность.
+
+**Открытые вопросы схемы** (решаются в тикетах):
+- Lease/ownership: как пометить событие «взято воркером», чтобы два
+  воркера не взяли одно (поля `LockedUntil`/`LockedBy` или
+  `SELECT ... FOR UPDATE SKIP LOCKED`) — к TASK-003/005
+- Хранилище отложенных ретраев: in-memory heap vs скан `NextAttemptAt`
+  по таблице — что переживает рестарт процесса — к TASK-005
+- Что входит в `IdempotencyKey` определяет поведение «дубль после окна» —
+  к TASK-002
+
 ## Роадмап (стадии)
 
 1. **Каркас**: ASP.NET скелет, Postgres-схема, docker-compose
