@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using WebhookEngine.Api.Endpoints;
+using WebhookEngine.Api.Workers;
 using WebhookEngine.Infrastructure;
 using WebhookEngine.Infrastructure.Persistence;
 
@@ -8,6 +9,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddHostedService<DeliveryWorker>();
+builder.Services.AddHostedService<SweeperService>();
 
 var app = builder.Build();
 

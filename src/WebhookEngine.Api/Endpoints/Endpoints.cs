@@ -40,6 +40,7 @@ public static class Endpoints
         IngestRequest req,
         WebhookEngineDbContext db,
         IDeduplicationStore dedup,
+        IEventQueue queue,
         IConfiguration config,
         CancellationToken ct)
     {
@@ -64,6 +65,14 @@ public static class Endpoints
             // доехал) — пропускаем в insert: индекс разрулит истину.
         }
 
+        // Backpressure: отказ только при раздутой персистентной очереди (вариант D с потолком).
+        var threshold = config.GetValue("Queue:PendingThreshold", 100_000);
+        var depth = await db.Events.CountAsync(
+            e => e.Status != EventStatus.Delivered && e.Status != EventStatus.DeadLettered, ct);
+        if (depth >= threshold)
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        var now = DateTimeOffset.UtcNow;
         var ev = new NotificationEvent
         {
             Id = Guid.NewGuid(),
@@ -71,7 +80,8 @@ public static class Endpoints
             IdempotencyKey = key,
             Payload = req.Payload,
             Status = EventStatus.Pending,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = now,
+            UpdatedAt = now
         };
         db.Events.Add(ev);
 
@@ -84,6 +94,13 @@ public static class Endpoints
             var seen = await db.Events.AsNoTracking()
                 .FirstAsync(e => e.IdempotencyKey == key, ct);
             return Duplicate(seen);
+        }
+
+        // Быстрый путь: попал в канал → InFlight; полон → остаётся Pending для sweeper'а.
+        if (queue.TryEnqueue(ev))
+        {
+            ev.Status = EventStatus.InFlight;
+            await db.SaveChangesAsync(ct);
         }
 
         var window = TimeSpan.FromHours(config.GetValue("Dedup:WindowHours", 24));

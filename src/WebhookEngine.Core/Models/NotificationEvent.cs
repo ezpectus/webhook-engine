@@ -13,6 +13,7 @@ public sealed class NotificationEvent
     public int AttemptCount { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
     public DateTimeOffset? DeliveredAt { get; set; }
     public DateTimeOffset? NextAttemptAt { get; set; }
 

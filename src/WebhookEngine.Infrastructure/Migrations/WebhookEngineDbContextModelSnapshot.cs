@@ -118,6 +118,9 @@ namespace WebhookEngine.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("WebhookId")
                         .HasColumnType("uuid");
 

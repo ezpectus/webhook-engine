@@ -96,7 +96,8 @@
 ## TASK-003 · Очередь: bounded channel и backpressure-политика
 
 **Стадия:** 3 · **Зона:** ядро · **Размер:** M ·
-**Зависит от:** TASK-001, P-01 ✓ · **Статус:** `todo`
+**Зависит от:** TASK-001, P-01 ✓ · **Статус:** `review`
+*(код написан Devin в режиме делегации — ждёт checkpoint-разбора юзером)*
 
 **Контекст.** Пиковая нагрузка ~1M событий/сек. Без ограничения очереди —
 OOM. Bounded `Channel` + честная политика переполнения.
@@ -318,7 +319,8 @@ Solution, DI, health-check. `dotnet run` поднимает API с `/health`.
 Написан: postgres:16 + redis:7 + api. Не проверен (Docker был выключен).
 Проверка: `docker compose -p webhook-engine up`.
 
-### P-04 · Webhook sender на HttpClientFactory · `todo`
+### P-04 · Webhook sender на HttpClientFactory · `review`
+
 Типизированный клиент, таймауты, обработка ошибок отправки.
 
 ### P-05 · SignalR status feed · `todo`

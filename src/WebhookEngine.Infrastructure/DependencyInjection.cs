@@ -3,7 +3,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using WebhookEngine.Core.Abstractions;
+using WebhookEngine.Infrastructure.Delivery;
 using WebhookEngine.Infrastructure.Persistence;
+using WebhookEngine.Infrastructure.Queues;
 using WebhookEngine.Infrastructure.Redis;
 
 namespace WebhookEngine.Infrastructure;
@@ -20,6 +22,8 @@ public static class DependencyInjection
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis));
 
         services.AddSingleton<IDeduplicationStore, RedisDeduplicationStore>();
+        services.AddSingleton<IEventQueue, EventQueue>();
+        services.AddHttpClient<WebhookSender>(c => c.Timeout = TimeSpan.FromSeconds(10));
 
         return services;
     }
