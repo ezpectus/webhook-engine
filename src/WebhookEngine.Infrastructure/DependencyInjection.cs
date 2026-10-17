@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
+using WebhookEngine.Core.Abstractions;
 using WebhookEngine.Infrastructure.Persistence;
+using WebhookEngine.Infrastructure.Redis;
 
 namespace WebhookEngine.Infrastructure;
 
@@ -16,6 +18,8 @@ public static class DependencyInjection
 
         var redis = config.GetConnectionString("Redis") ?? "localhost:6379";
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis));
+
+        services.AddSingleton<IDeduplicationStore, RedisDeduplicationStore>();
 
         return services;
     }

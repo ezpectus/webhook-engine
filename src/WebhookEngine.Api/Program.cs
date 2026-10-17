@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using WebhookEngine.Api.Endpoints;
 using WebhookEngine.Infrastructure;
 using WebhookEngine.Infrastructure.Persistence;
 
@@ -19,6 +20,8 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.MapEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
