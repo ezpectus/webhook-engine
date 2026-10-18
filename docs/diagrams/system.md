@@ -22,6 +22,7 @@ flowchart TB
         W[Worker pool]
         RL{Token bucket<br/>per webhook}
         RH[Retry heap<br/>backoff + jitter]
+        SW[Sweeper<br/>lease reclaim + due scan]
         DLQ[(Dead letters)]
     end
 
@@ -37,6 +38,8 @@ flowchart TB
     RL -->|HTTP| EXT[External webhook endpoints]
     W -->|status| SIG --> DASH
     RL -.->|exhausted| DLQ
+    SW -->|Pending → InFlight| Q
+    SW -.->|stale InFlight → Pending| PG
     DASH -->|replay| Q
     API -->|status| SIG
 ```

@@ -85,23 +85,25 @@ events ───> │ Ingest   │─> │ Dedup      │─> │ Queue        �
 Первый слой — про скорость, второй — про корректность.
 
 **Открытые вопросы схемы** (решаются в тикетах):
-- Lease/ownership: как пометить событие «взято воркером», чтобы два
-  воркера не взяли одно (поля `LockedUntil`/`LockedBy` или
-  `SELECT ... FOR UPDATE SKIP LOCKED`) — к TASK-003/005
-- Хранилище отложенных ретраев: in-memory heap vs скан `NextAttemptAt`
-  по таблице — что переживает рестарт процесса — к TASK-005
+- ~~Lease/ownership~~ — реализовано: `InFlight` + `UpdatedAt`, протухание
+  через sweeper (`InFlightTimeoutMinutes`). Края: гонка enqueue —
+  см. guide.md «Известные края»
+- Хранилище отложенных ретраев: сейчас — скан `NextAttemptAt` sweeper'ом;
+  in-memory heap придёт с TASK-005 (ускорение, PG остаётся истиной)
 - Что входит в `IdempotencyKey` определяет поведение «дубль после окна» —
-  к TASK-002
+  решено: sha256(webhookId + payload), клиентский header — эволюция
 
 ## Роадмап (стадии)
 
-1. **Каркас**: ASP.NET скелет, Postgres-схема, docker-compose
-2. **Приём**: ingest + dedup (Redis)
-3. **Очередь**: channels + backpressure
-4. **Доставка**: workers + HttpClientFactory + rate limiter
-5. **Ретраи**: min-heap scheduler + backoff/jitter
-6. **DLQ**: семантика, таблица, replay endpoint
-7. **Наблюдаемость**: SignalR-фид + React-дашборд
+1. **Каркас** ✓: ASP.NET скелет, Postgres-схема, docker-compose
+2. **Приём** ✓: ingest + dedup (insert-first: PG-индекс + Redis-кеш)
+3. **Очередь** ✓: bounded channel + политика «PG = очередь, reject при
+   Pending > потолка» + sweeper
+4. **Доставка** ⏳: workers + HttpClientFactory ✓; rate limiter — TASK-004
+5. **Ретраи** ⏳: flat-delay заглушка стоит; min-heap + backoff/jitter —
+   TASK-005 (руками)
+6. **DLQ**: семантика ✓ (есть в воркере); replay endpoint — TASK-006
+7. **Наблюдаемость**: SignalR-фид + React-дашборд — P-05/P-06
 8. **Хаос**: тесты сбоев (падение воркера до/после ack и т.п.)
 9. **Нагрузка**: генератор «миллион событий», замеры
 10. **Подпись**: HMAC-SHA256 подпись webhook'ов по `Secret`
