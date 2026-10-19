@@ -163,6 +163,32 @@ OOM. Bounded `Channel` + честная политика переполнени�
 **Вопросы на понимание:** token bucket vs leaky bucket — почему для
 внешних API обычно первый? Что даёт capacity (допустимый всплеск)?
 
+### Путь реализации (подсказки, не код)
+
+Скелет ждёт: `src/WebhookEngine.Core/RateLimiting/TokenBucket.cs`,
+тесты — `tests/.../TokenBucketTests.cs` (пустые Fact — заполнить самому).
+
+1. **Состояние:** `_capacity`, `_refillPerSecond`, `_tokens`,
+   `_lastRefill`. Пополнение — ленивое: считаем по прошедшему времени
+   при каждом вызове, а не тикаем таймером.
+2. **Время — снаружи.** Не зови `DateTimeOffset.UtcNow` внутри класса —
+   принимай `TimeProvider` в конструктор (дефолт `TimeProvider.System`).
+   Иначе тесты будут ждать реальные секунды.
+3. **TryTake:** refill → `tokens >= 1` → `tokens--`, true; иначе false.
+4. **TimeUntilAvailable:** refill → `tokens >= 1 ? Zero : (1-tokens)/rate`.
+5. **Подумай до кода:** нужен ли `lock` (несколько воркеров дергают один
+   bucket)? что при `refillPerSecond <= 0`? может ли `tokens` уйти в минус?
+6. После чистого bucket — обёртка `IWebhookRateLimiter` поверх
+   `ConcurrentDictionary<Guid, TokenBucket>` (per-webhook состояние,
+   MVP — память; Redis-версия только при втором инстансе, D6).
+7. Врезка в воркер — после того как класс работает: limiter говорит
+   «жди 200мс» → событие уходит в отложенную отправку, общий механизм
+   с ретраем (D7).
+
+**Баги, которые поймаю на ревью** (не подглядывай — сам подумай):
+отрицательные токены при параллельном доступе; refill без `min(cap)`;
+тесты, зависящие от реального времени (флаки).
+
 ---
 
 ## TASK-005 · Retry scheduler: min-heap + backoff/jitter
@@ -200,6 +226,36 @@ exp backoff, jitter против thundering herd, потолок → DLQ.
 **Вопросы на понимание:** почему без jitter все ретраи одной пачки сходятся
 в одну секунду? Чем отличается «воркер умер до ack» от «воркер умер
 после ack» для этого компонента?
+
+### Путь реализации (подсказки, не код)
+
+Класс живёт в `Core` (чистый алгоритм, тесты без Docker), реализует
+`IRetryScheduler`. Заменяет плоскую заглушку `RetryDelaySeconds` в
+`DeliveryWorker`.
+
+1. **Две части, не одна:**
+   a) `ComputeDelay(attempt)` — чистая функция: `min(cap, base * 2^attempt)`
+      + jitter. Параметры (D9): base 1с, cap 5мин, max 5 попыток.
+      Jitter — свой выбор: full (`rand(delay)`) или equal
+      (`delay/2 + rand(delay/2)`) — зафиксируй в PLAN.md почему.
+   b) Heap: `PriorityQueue<Guid, DateTimeOffset>` — due-time как приоритет.
+      `Enqueue(eventId, dueAt)`, `Peek`/`Dequeue` ближайшего.
+2. **Heap — ускоритель, PG — истина.** Рестарт теряет кучу → sweeper уже
+   умеет сканить `NextAttemptAt`, это покрывает восстановление. Пойми:
+   куча только делает due-извлечение быстрым, не является хранилищем.
+3. **Cancel/reschedule:** `PriorityQueue` не умеет Remove — варианты:
+   «ленивое удаление» (при доставке due-элемента сверять с актуальным
+   `NextAttemptAt` в PG) или версионные записи. Выбери и обоснуй.
+4. **Время — снова снаружи** (`TimeProvider`), как в TASK-004.
+5. **Конкурентность:** воркеров может быть несколько — подумай про lock.
+6. Врезка: воркер вместо `now + retryDelay` зовёт scheduler →
+   `NextAttemptAt = now + ComputeDelay(attempt)`; sweeper достаёт due
+   из кучи (или скана) → `InFlight` → канал.
+
+**Баги, которые поймаю на ревью:** backoff без cap улетает в часы;
+jitter у всех событий одинаковый (seed!); событие выкинуто из кучи,
+но в PG осталось `RetryScheduled` — или наоборот; max-attempts проверка
+после записи в DLQ вместо до ретрая.
 
 ---
 
