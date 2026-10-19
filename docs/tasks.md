@@ -391,8 +391,11 @@ Solution, DI, health-check. `dotnet run` поднимает API с `/health`.
 Готово: `StatusFeedHub` на `/hubs/status`, метод `"status"`;
 воркер паблишит после каждой смены статуса. Ждёт живого клиента (P-06).
 
-### P-06 · React-дашборд · `todo`
-Статистика доставки, таблица DLQ, кнопка retry.
+### P-06 · React-дашборд · `review`
+Vite+React+TS в `dashboard/`: карточки по статусам (поллинг `/stats`
+каждые 2с), DLQ-таблица с кнопкой replay, live-фид через SignalR
+(`/hubs/status`). Прокси vite → :5269, CORS не нужен.
+Запуск: `npm run dev` (скрипты обходят баг с пробелом в пути).
 
 ### P-07 · Генератор нагрузки · `todo`
 N событий/сек, паттерны: всплеск, равномерный RPS.

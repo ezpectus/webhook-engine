@@ -1,0 +1,24 @@
+.page { max-width: 1100px; margin: 0 auto; padding: 24px; font-family: system-ui, sans-serif; color: #e6e6e6; background: #111; min-height: 100vh; }
+header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #888; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot.on { background: #3fb950; }
+.dot.off { background: #f85149; }
+.cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 32px; }
+.card { background: #1c1c1c; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px; }
+.card.alert { border-color: #f85149; }
+.card-num { font-size: 28px; font-weight: 700; }
+.card-label { font-size: 12px; color: #888; margin-top: 4px; }
+.cols { display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; color: #888; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #2a2a2a; }
+td { padding: 6px 8px; border-bottom: 1px solid #1c1c1c; }
+tr.replayed td { color: #555; }
+.mono { font-family: ui-monospace, monospace; }
+button { background: #21262d; color: #e6e6e6; border: 1px solid #30363d; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+button:hover { border-color: #58a6ff; }
+.feed { list-style: none; padding: 0; margin: 0; font-size: 13px; max-height: 420px; overflow-y: auto; }
+.feed li { padding: 5px 0; border-bottom: 1px solid #1c1c1c; }
+.feed em { color: #666; font-style: normal; }
+.empty { color: #555; text-align: center; }
