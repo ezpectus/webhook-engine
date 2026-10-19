@@ -42,12 +42,14 @@ Diagrams and the reasoning behind the ordering live in
 
 ```
 src/
-  WebhookEngine.Api            HTTP ingest, SignalR, DI wiring
+  WebhookEngine.Api            HTTP ingest, SignalR, DI wiring, workers
   WebhookEngine.Core           domain models + delivery-guarantee contracts
   WebhookEngine.Infrastructure Postgres (EF Core), Redis, external plumbing
+dashboard/                     React + TS ops dashboard (stats, DLQ, live feed)
 tests/
   WebhookEngine.Tests          unit + chaos tests
 docs/                          architecture spec, task backlog, diagrams
+  guides/                      concept guides (RU): hands-on tasks, stack Q&A
 PLAN.md                        data flow map + decision journal (ADR-style)
 ```
 
@@ -57,15 +59,18 @@ PLAN.md                        data flow map + decision journal (ADR-style)
 docker compose -p webhook-engine up        # api + postgres + redis
 # or run deps only and the API locally:
 docker compose -p webhook-engine up -d postgres redis
-dotnet run --project src/WebhookEngine.Api # http://localhost:5xxx/health
+dotnet run --project src/WebhookEngine.Api # http://localhost:5269
+cd dashboard && npm install && npm run dev # http://localhost:5173
 ```
 
 ## Status
 
-Early build stage — scaffold, schema and compose are in; the delivery
-core is being implemented stage by stage. See
-[docs/tasks.md](docs/tasks.md) for the backlog and
-[docs/architecture.md](docs/architecture.md) for the roadmap.
+Working vertical slice: ingest with dedup → bounded queue → delivery
+worker → retries → DLQ + replay, plus a SignalR status feed and the
+React dashboard. Remaining core work: token bucket (TASK-004) and the
+retry heap (TASK-005). See [docs/tasks.md](docs/tasks.md) for the
+backlog and [docs/architecture.md](docs/architecture.md) for the
+roadmap.
 
 ## License
 
