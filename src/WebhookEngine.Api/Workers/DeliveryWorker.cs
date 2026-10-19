@@ -21,10 +21,11 @@ public sealed class DeliveryWorker(
             using var scope = services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<WebhookEngineDbContext>();
             var sender = scope.ServiceProvider.GetRequiredService<WebhookSender>();
+            var feed = scope.ServiceProvider.GetRequiredService<IStatusFeed>();
 
             try
             {
-                await ProcessAsync(ev, db, sender, retryDelay, stoppingToken);
+                await ProcessAsync(ev, db, sender, feed, retryDelay, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -38,6 +39,7 @@ public sealed class DeliveryWorker(
         NotificationEvent ev,
         WebhookEngineDbContext db,
         WebhookSender sender,
+        IStatusFeed feed,
         TimeSpan retryDelay,
         CancellationToken ct)
     {
@@ -90,5 +92,6 @@ public sealed class DeliveryWorker(
         }
 
         await db.SaveChangesAsync(ct);
+        await feed.PublishAsync(ev.Id, tracked.Status.ToString(), ct);
     }
 }

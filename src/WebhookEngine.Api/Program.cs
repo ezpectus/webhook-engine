@@ -9,6 +9,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<WebhookEngine.Core.Abstractions.IStatusFeed,
+    WebhookEngine.Api.Hubs.SignalRStatusFeed>();
 builder.Services.AddHostedService<DeliveryWorker>();
 builder.Services.AddHostedService<SweeperService>();
 
@@ -25,6 +28,7 @@ app.UseHttpsRedirection();
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.MapEndpoints();
+app.MapHub<WebhookEngine.Api.Hubs.StatusFeedHub>("/hubs/status");
 
 using (var scope = app.Services.CreateScope())
 {

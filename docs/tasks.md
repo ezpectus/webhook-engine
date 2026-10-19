@@ -326,12 +326,14 @@ Solution, DI, health-check. `dotnet run` поднимает API с `/health`.
 Написан: postgres:16 + redis:7 + api. Не проверен (Docker был выключен).
 Проверка: `docker compose -p webhook-engine up`.
 
-### P-04 · Webhook sender на HttpClientFactory · `review`
+### P-04 · Webhook sender на HttpClientFactory · `done`
 
 Типизированный клиент, таймауты, обработка ошибок отправки.
+Классификация покрыта `WebhookSenderTests` (2xx/4xx/429/5xx/conn-fail).
 
-### P-05 · SignalR status feed · `todo`
-Хаб, пуш статусов доставки на дашборд.
+### P-05 · SignalR status feed · `review`
+Готово: `StatusFeedHub` на `/hubs/status`, метод `"status"`;
+воркер паблишит после каждой смены статуса. Ждёт живого клиента (P-06).
 
 ### P-06 · React-дашборд · `todo`
 Статистика доставки, таблица DLQ, кнопка retry.
