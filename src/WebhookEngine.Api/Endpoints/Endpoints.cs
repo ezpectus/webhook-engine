@@ -14,6 +14,8 @@ public static class Endpoints
     {
         app.MapPost("/webhooks", RegisterWebhook);
         app.MapPost("/events", IngestEvent);
+        app.MapGet("/deadletters", ListDeadLetters);
+        app.MapPost("/deadletters/{eventId:guid}/replay", ReplayDeadLetter);
     }
 
     private static async Task<IResult> RegisterWebhook(
@@ -107,6 +109,43 @@ public static class Endpoints
         await dedup.MarkAsync(key, window, ct);
 
         return Results.Accepted(value: new { eventId = ev.Id, status = "accepted" });
+    }
+
+    private static async Task<IResult> ListDeadLetters(
+        WebhookEngineDbContext db, CancellationToken ct)
+    {
+        var items = await db.DeadLetters.AsNoTracking()
+            .OrderByDescending(d => d.DeadLetteredAt)
+            .Take(200)
+            .Select(d => new { d.EventId, d.Reason, d.DeadLetteredAt, d.ReplayedAt })
+            .ToListAsync(ct);
+        return Results.Ok(items);
+    }
+
+    private static async Task<IResult> ReplayDeadLetter(
+        Guid eventId, WebhookEngineDbContext db, IEventQueue queue, CancellationToken ct)
+    {
+        var dl = await db.DeadLetters
+            .FirstOrDefaultAsync(d => d.EventId == eventId && d.ReplayedAt == null, ct);
+        if (dl is null)
+            return Results.NotFound(new { error = "no live dead letter for event" });
+
+        var ev = await db.Events.FindAsync([eventId], ct);
+        if (ev is null || ev.Status != EventStatus.DeadLettered)
+            return Results.Conflict(new { error = "event not in DeadLettered state" });
+
+        // D12: replay идёт в обход dedup (тот же ключ был бы съеден фильтром).
+        // История Attempts — аудит, AttemptCount обнуляем: новый заход получает
+        // свежий бюджет ретраев.
+        var now = DateTimeOffset.UtcNow;
+        ev.Status = queue.TryEnqueue(ev) ? EventStatus.InFlight : EventStatus.Pending;
+        ev.AttemptCount = 0;
+        ev.NextAttemptAt = null;
+        ev.UpdatedAt = now;
+        dl.ReplayedAt = now;
+        await db.SaveChangesAsync(ct);
+
+        return Results.Accepted(value: new { eventId = ev.Id, status = ev.Status.ToString() });
     }
 
     private static string ComputeKey(Guid webhookId, string payload)

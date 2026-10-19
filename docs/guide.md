@@ -58,7 +58,7 @@ SweeperService (каждые 10с, бережно)
 
 | Файл | Что | Зона |
 | --- | --- | --- |
-| `Api/Endpoints/Endpoints.cs` | POST /events, /webhooks; threshold, insert-first | юзер ревьюит |
+| `Api/Endpoints/Endpoints.cs` | POST /events, /webhooks, GET /deadletters,<br>POST /deadletters/{id}/replay; threshold, insert-first | юзер ревьюит |
 | `Infrastructure/Redis/RedisDeduplicationStore.cs` | dedup-кеш, fail-open | юзер ревьюит |
 | `Infrastructure/Queues/EventQueue.cs` | bounded channel 10k | ревью |
 | `Api/Workers/DeliveryWorker.cs` | отправка, попытки, статусы | ревью |
