@@ -374,9 +374,9 @@ webhook'ом, чтобы scale out не перетасовывал всё.
 ### P-01 · ASP.NET solution scaffold · `done`
 Solution, DI, health-check. `dotnet run` поднимает API с `/health`.
 
-### P-02 · Postgres: схема + миграции + репозитории · `in-progress`
-Схема + Initial миграция готовы. Осталось: репозитории под поток
-(найти по id, обновить статус, список DLQ, создать webhook).
+### P-02 · Postgres: схема + миграции · `done`
+Схема + миграции готовы. Репозитории — решено НЕ делать: D15,
+`DbContext` используется напрямую, `IRepository` поверх EF — шум.
 
 ### P-03 · docker-compose · `review`
 Написан: postgres:16 + redis:7 + api. Не проверен (Docker был выключен).
@@ -397,5 +397,8 @@ Vite+React+TS в `dashboard/`: карточки по статусам (полл�
 (`/hubs/status`). Прокси vite → :5269, CORS не нужен.
 Запуск: `npm run dev` (скрипты обходят баг с пробелом в пути).
 
-### P-07 · Генератор нагрузки · `todo`
-N событий/сек, паттерны: всплеск, равномерный RPS.
+### P-07 · Генератор нагрузки · `review`
+`tools/LoadGen` (консоль, вне solution): `--webhook --rps --seconds
+--burst --dup`. Паттерны: равномерный RPS и всплеск ×5; счётчики
+accepted/duplicate/err показывают dedup живьём. Проверка — когда
+встанет API.

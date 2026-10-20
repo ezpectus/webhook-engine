@@ -61,6 +61,7 @@ SweeperService (каждые 10с, бережно)
 | `Api/Endpoints/Endpoints.cs` | POST /events, /webhooks, GET /deadletters,<br>POST replay, GET /stats; threshold, insert-first | юзер ревьюит |
 | `Api/Hubs/` | SignalR-фид статусов (`/hubs/status`, метод `"status"`) | платформа |
 | `dashboard/` | React-дашборд: статусы, DLQ+replay, live-фид | платформа |
+| `tools/LoadGen/` | генератор нагрузки (rps/burst/dup %) | платформа |
 | `Infrastructure/Redis/RedisDeduplicationStore.cs` | dedup-кеш, fail-open | юзер ревьюит |
 | `Infrastructure/Queues/EventQueue.cs` | bounded channel 10k | ревью |
 | `Api/Workers/DeliveryWorker.cs` | отправка, попытки, статусы | ревью |
@@ -96,4 +97,6 @@ docker compose -p webhook-engine up -d postgres redis
 dotnet run --project src/WebhookEngine.Api          # :5269
 cd dashboard && npm run dev                          # :5173
 # POST /webhooks {"url":"https://..."} → POST /events {"webhookId":"..","payload":"{}"}
+# нагрузка:
+dotnet run --project tools/LoadGen -- --webhook <guid> --rps 100 --dup 0.2
 ```

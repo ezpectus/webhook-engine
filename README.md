@@ -46,6 +46,7 @@ src/
   WebhookEngine.Core           domain models + delivery-guarantee contracts
   WebhookEngine.Infrastructure Postgres (EF Core), Redis, external plumbing
 dashboard/                     React + TS ops dashboard (stats, DLQ, live feed)
+tools/LoadGen/                 load generator (rps, burst, duplicate rate)
 tests/
   WebhookEngine.Tests          unit + chaos tests
 docs/                          architecture spec, task backlog, diagrams
