@@ -371,21 +371,11 @@ webhook'ом, чтобы scale out не перетасовывал всё.
 
 ## Зона Devin (платформа, по явному запросу)
 
-### P-01 · ASP.NET solution scaffold · `done`
-Solution, DI, health-check. `dotnet run` поднимает API с `/health`.
-
-### P-02 · Postgres: схема + миграции · `done`
-Схема + миграции готовы. Репозитории — решено НЕ делать: D15,
-`DbContext` используется напрямую, `IRepository` поверх EF — шум.
+*Закрытые тикеты — в `CHANGELOG.md` (§19). Здесь только живое.*
 
 ### P-03 · docker-compose · `review`
 Написан: postgres:16 + redis:7 + api. Не проверен (Docker был выключен).
 Проверка: `docker compose -p webhook-engine up`.
-
-### P-04 · Webhook sender на HttpClientFactory · `done`
-
-Типизированный клиент, таймауты, обработка ошибок отправки.
-Классификация покрыта `WebhookSenderTests` (2xx/4xx/429/5xx/conn-fail).
 
 ### P-05 · SignalR status feed · `review`
 Готово: `StatusFeedHub` на `/hubs/status`, метод `"status"`;
