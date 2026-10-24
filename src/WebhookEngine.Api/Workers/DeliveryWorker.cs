@@ -82,7 +82,7 @@ public sealed class DeliveryWorker(
         var sw = Stopwatch.StartNew();
         var result = webhook is null || !webhook.IsActive
             ? SendResult.NonRetryable("webhook missing or inactive")
-            : await sender.SendAsync(webhook.Url, tracked.Payload, ct);
+            : await sender.SendAsync(webhook.Url, tracked.Payload, ct, webhook.Secret);
         sw.Stop();
 
         var now = DateTimeOffset.UtcNow;

@@ -47,5 +47,12 @@ services:
     ports:
       - "3000:80"
 
+  mockreceiver:
+    build: ./tools/MockReceiver
+    ports:
+      - "5005:5005"
+    environment:
+      ASPNETCORE_URLS: http://+:5005
+
 volumes:
   pgdata:

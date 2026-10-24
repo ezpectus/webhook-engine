@@ -28,7 +28,8 @@ app.MapPost("/hook", async (HttpRequest req) =>
 {
     var mode = req.Query["mode"].ToString();
     var body = await new StreamReader(req.Body).ReadToEndAsync();
-    Record(new { at = DateTimeOffset.UtcNow, mode = mode == "" ? "ok" : mode, body });
+    var sig = req.Headers["X-Webhook-Signature"].ToString();
+    Record(new { at = DateTimeOffset.UtcNow, mode = mode == "" ? "ok" : mode, signature = sig == "" ? null : sig, body });
 
     return mode switch
     {
@@ -47,4 +48,4 @@ app.MapPost("/hook", async (HttpRequest req) =>
 app.MapGet("/received", () => Results.Ok(received.Reverse()));
 app.MapGet("/health", () => Results.Ok(new { status = "ok", received = received.Count }));
 
-app.Run("http://localhost:5005");
+app.Run(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://+:5005");

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 
 namespace WebhookEngine.Infrastructure.Delivery;
@@ -11,11 +12,22 @@ public sealed record SendResult(bool Success, int? StatusCode, string? Error, bo
 
 public sealed class WebhookSender(HttpClient http)
 {
-    public async Task<SendResult> SendAsync(string url, string payload, CancellationToken ct)
+    public async Task<SendResult> SendAsync(
+        string url, string payload, CancellationToken ct, string? secret = null)
     {
         try
         {
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+
+            // D14: подписываем тело HMAC-SHA256 — получатель проверяет, что
+            // вебхук от нас и не изменён (как X-Hub-Signature-256 у GitHub).
+            if (!string.IsNullOrEmpty(secret))
+            {
+                var key = Encoding.UTF8.GetBytes(secret);
+                var mac = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload));
+                content.Headers.Add("X-Webhook-Signature", $"sha256={Convert.ToHexString(mac).ToLowerInvariant()}");
+            }
+
             var resp = await http.PostAsync(url, content, ct);
             var code = (int)resp.StatusCode;
 

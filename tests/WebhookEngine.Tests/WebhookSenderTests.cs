@@ -73,4 +73,38 @@ public class WebhookSenderTests
         Assert.True(r.IsRetryable);
         Assert.Null(r.StatusCode);
     }
+
+    [Fact]
+    public async Task Send_WithSecret_AddsHmacSignature()
+    {
+        string? signature = null;
+        var sender = Sender(new FakeHandler(req =>
+        {
+            signature = req.Content?.Headers.TryGetValues("X-Webhook-Signature", out var v) == true
+                ? v.First() : null;
+            return Reply(HttpStatusCode.OK);
+        }));
+
+        var r = await sender.SendAsync("https://example.com/hook", "{\"a\":1}", CancellationToken.None, "s3cret");
+
+        Assert.True(r.Success);
+        var expected = Convert.ToHexString(
+            System.Security.Cryptography.HMACSHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes("s3cret"),
+                System.Text.Encoding.UTF8.GetBytes("{\"a\":1}"))).ToLowerInvariant();
+        Assert.Equal($"sha256={expected}", signature);
+    }
+
+    [Fact]
+    public async Task Send_WithoutSecret_NoSignatureHeader()
+    {
+        var sender = Sender(new FakeHandler(req =>
+        {
+            Assert.False(req.Content?.Headers.Contains("X-Webhook-Signature") ?? true);
+            return Reply(HttpStatusCode.OK);
+        }));
+
+        var r = await sender.SendAsync("https://example.com/hook", "{}", CancellationToken.None);
+        Assert.True(r.Success);
+    }
 }
