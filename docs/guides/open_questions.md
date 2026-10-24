@@ -28,6 +28,11 @@
   поменять `RateLimitPerSecond`, лимитер живёт на старом rate до
   рестарта. MVP-компромисс или чинить (пересоздавать bucket при
   смене rate — а что тогда с токенами)?
+- **L4** — индексы БД: `(Status, NextAttemptAt)` → partial на
+  две живые статусы? Но stale-scan `Status=InFlight` тогда сядет на
+  seq scan. Разбор в PLAN.md → реши после `EXPLAIN` на реальных
+  данных. Плюс трюк: `NextAttemptAt = CreatedAt` при insert убирает
+  NULL и делает due-scan чистым range-запросом
 - **L2** — в `TokenBucket`: стартуем полным или пустым ведром —
   обоснуй свой выбор в коде комментом.
 - ~~**S1**~~ ✓ решено версионными записями (2026-10-25): reschedule

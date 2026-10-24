@@ -88,6 +88,10 @@ flowchart LR
 | 2026-10-24 | TASK-008 `ConsistentHashRing` реализован (делегировано), в систему не врезан — ждёт мульти-инстанс | review |
 | 2026-10-24 | `/metrics`: EngineMetrics-счётчики + DB-derived (depth, dlq_live, ratios); `/health` → readiness PG+Redis; таблица метрик — черновик | TASK-009 частично |
 | 2026-10-24 | D14 реализована: HMAC-SHA256 подпись тела (`X-Webhook-Signature`); воркер шлёт `webhook.Secret`; `MockReceiver` в compose + лог подписи; параллелизм воркеров `Delivery:WorkerParallelism` | платформа |
+| 2026-10-25 | Redis fail-open закрыт на DI-границе: `abortConnect=false` — мёртвый Redis больше не роняет ingest резолвом | гарантия |
+| 2026-10-25 | TASK-005 (делегировано): `BackoffPolicy` exp·2^a + equal jitter + cap 5мин + max 5; `HeapRetryScheduler` — версионный lazy deletion; воркер: max-attempts → DLQ, schedule после SaveChanges; sweeper: heap fast-path + PG-скан (истина) | review — ждёт защиты юзером |
+| 2026-10-25 | Модель разработки зафиксирована: Kanban + XP соло (AGENTS) | процесс |
+| 2026-10-25 | `GET /webhooks`, `GET /events`, `GET /events/{id}` (+attempts), `DELETE /received` у MockReceiver — read-side дозакрыт | платформа |
 | 2026-10-17 | Неретраябельное: 4xx (кроме 429), кривой payload, неактивный webhook | правило: «изменится ли ответ от повтора?» нет → не ретрай |
 | 2026-10-17 | DLQ-условия: исчерпаны ретраи / неретраябельная ошибка / невалидный payload post-accept / webhook деактивирован | невалидное на входе — всё ещё 400, не DLQ |
 | 2026-10-17 | Replay идёт в обход dedup (тот же ключ съест фильтр) | status→Pending, история attempts — аудит, не трём |
@@ -99,7 +103,11 @@ flowchart LR
   PG-индексом. Хотим ли различать «повтор той же отправки» vs «новое
   событие с тем же телом»? Нужен клиентский Idempotency-Key header —
   эволюция, не MVP
-- Отложенные ретраи: in-memory heap теряется при рестарте → добирать
-  сканом `NextAttemptAt` из PG? — решить в TASK-005
-- Подпись webhook'ов (HMAC по `WebhookEndpoint.Secret`) — отдельная
-  фича, не про гарантию. Позже.
+- ~~Отложенные ретраи: heap при рестарте~~ ✓ решено: PG-скан — истина,
+  heap — ускоритель (TASK-005)
+- ~~Подпись webhook'ов~~ ✓ сделано: `X-Webhook-Signature` (D14)
+- **L4** — индекс `(Status, NextAttemptAt)` → partial `WHERE Status IN
+  (Pending, RetryScheduled)`: меньше индекс, быстрее скан — но
+  stale-reclaim (`Status=InFlight`) потеряет индекс и ляжет на seq scan.
+  Держать полный или делать два partial? Решение за юзером после
+  `EXPLAIN` на живых данных

@@ -67,3 +67,60 @@ flowchart LR
 Красные зоны потери (см. `PLAN.md` — карта «дубль/потеря»):
 событие непотеряемо только после записи в `PG`. Всё, что до неё —
 либо отвергнуто клиенту, либо клиент ретраит сам.
+
+## Схема БД (ER)
+
+```mermaid
+erDiagram
+    WebhookEndpoints ||--o{ NotificationEvents : "получает"
+    NotificationEvents ||--o{ DeliveryAttempts : "история"
+    NotificationEvents ||--o| DeadLetters : "терминал"
+
+    WebhookEndpoints {
+        uuid Id PK
+        string Url "IDX"
+        string Secret "HMAC-ключ подписи"
+        int RateLimitPerSecond "token bucket"
+        bool IsActive
+        timestamptz CreatedAt
+    }
+
+    NotificationEvents {
+        uuid Id PK
+        uuid WebhookId FK
+        string IdempotencyKey "UNIQUE — граница dedup"
+        jsonb Payload
+        int Status "Pending·InFlight·RetryScheduled·Delivered·DeadLettered"
+        int AttemptCount
+        timestamptz NextAttemptAt "дurable-расписание; IDX(Status,NextAttemptAt)"
+        timestamptz DeliveredAt
+        timestamptz CreatedAt
+        timestamptz UpdatedAt "lease-метка для stale-reclaim"
+    }
+
+    DeliveryAttempts {
+        uuid Id PK
+        uuid EventId FK "IDX(EventId,AttemptNumber)"
+        int AttemptNumber
+        timestamptz AttemptedAt
+        int ResponseStatusCode "null при timeout/conn error"
+        string Error
+        bool Succeeded
+        int DurationMs
+    }
+
+    DeadLetters {
+        uuid Id PK
+        uuid EventId FK
+        string Reason "почему здесь — через неделю должно быть ясно"
+        timestamptz DeadLetteredAt "IDX"
+        timestamptz ReplayedAt "null = живая запись DLQ"
+    }
+```
+
+Заметки по схеме:
+- `IdempotencyKey` UNIQUE — последняя граница правильности (Redis
+  fail-open → индекс решает).
+- `(Status, NextAttemptAt)` — кормит due-scan sweeper'а; кандидат на
+  partial index `WHERE Status IN (Pending, RetryScheduled)` — вопрос L4.
+- `UpdatedAt` — и lease, и «когда что-то трогали» — двойная роль.

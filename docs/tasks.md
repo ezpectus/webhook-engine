@@ -419,6 +419,26 @@ accepted/duplicate/err показывают dedup живьём. Проверка
 `X-Webhook-Signature: sha256=<hex>` по `WebhookEndpoint.Secret` (D14);
 MockReceiver логирует подпись. Ждёт живой проверки получателем.
 
+### TASK-010 · Индексы БД на живых данных · `todo`
+**Зона:** ядро (решения) / платформа (миграция) · **Зависит от:** Docker.
+Смысл — не угадывать индексы, а мерить. После живого прогона с LoadGen:
+`EXPLAIN ANALYZE` на due-scan, stale-scan, `/stats`, `/events`. Решения:
+partial index (L4), `NextAttemptAt=CreatedAt` вместо NULL (чистый
+range). Миграцию пишет Devin по твоему списку.
+
+### TASK-011 · EN-перевод документов · `todo`
+**Зона:** платформа · **Зависит от:** финал системы. Перевести гайды и
+концепции на английский (README уже EN), оставить RU-версии в
+`docs/guides/ru/` если нужно.
+
+### P-12 · Живой прогон (чеклист) · `todo`
+**Зона:** платформа · **Зависит от:** Docker.
+`docker compose up -d postgres redis mockreceiver` → `dotnet run --project
+src/WebhookEngine.Api` → `POST /webhooks` на `http://localhost:5005/hook`
+→ LoadGen `--rps 50 --dup 0.3` → смотреть дашборд, `/metrics`,
+`/received`. Потом `?mode=flap` — живые ретраи по backoff.
+Predict-then-run: перед каждым шагом юзер предсказывает счётчики.
+
 ### Новое за сессию 2026-10-24 (уже в done-log)
 - **P-08** метрики + readiness `/health` (PG+Redis) · `cb17bbd` `a8aa8e5`
 - **P-10** MockReceiver + compose-сервис :5005 · `47df4b5` `8d6b34d`

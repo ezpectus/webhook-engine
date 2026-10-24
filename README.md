@@ -16,10 +16,14 @@ endpoints — reliably, under load, and honestly about failure.
   instead of silent OOM.
 - **Per-webhook rate limiting** — token bucket per endpoint, so receivers
   don't ban us.
-- **Retries** — min-heap scheduler with exponential backoff and jitter;
+- **Retries** — in-memory min-heap with versioned lazy deletion over
+  a durable Postgres schedule; exponential backoff + equal jitter;
   exhausted events land in a queryable DLQ, replayable after fixes.
-- **Observability** — delivery status feed over SignalR and a React
-  dashboard (delivery stats, DLQ inspection, manual retry).
+- **Signed webhooks** — `X-Webhook-Signature: sha256=<hex>` HMAC over
+  the payload per endpoint secret.
+- **Observability** — `/metrics` counters + ratios, PG/Redis readiness
+  probe, SignalR status feed and a React dashboard (status cards,
+  metrics strip, event list with attempt history, DLQ replay).
 
 ## Stack
 
@@ -45,8 +49,9 @@ src/
   WebhookEngine.Api            HTTP ingest, SignalR, DI wiring, workers
   WebhookEngine.Core           domain models + delivery-guarantee contracts
   WebhookEngine.Infrastructure Postgres (EF Core), Redis, external plumbing
-dashboard/                     React + TS ops dashboard (stats, DLQ, live feed)
+dashboard/                     React + TS ops dashboard (stats, metrics, events, DLQ, live feed)
 tools/LoadGen/                 load generator (rps, burst, duplicate rate)
+tools/MockReceiver/            test webhook receiver with chaos modes (500/429/slow/flap/drop)
 tests/
   WebhookEngine.Tests          unit + chaos tests
 docs/                          architecture spec, task backlog, diagrams
@@ -64,14 +69,31 @@ dotnet run --project src/WebhookEngine.Api # http://localhost:5269
 cd dashboard && npm install && npm run dev # http://localhost:5173
 ```
 
+## API surface
+
+```
+POST /webhooks                    register endpoint (url, secret, rate limit)
+GET  /webhooks                    list endpoints
+POST /events                      ingest (idempotent; 202 accepted / duplicate)
+GET  /events?take=&status=        recent events
+GET  /events/{id}                 event detail + attempt history
+GET  /deadletters                 DLQ (latest 200, live entries)
+POST /deadletters/{id}/replay     replay a dead-lettered event (bypasses dedup)
+GET  /stats                       status counts + live DLQ count
+GET  /metrics                     counters, dedup/retry ratios, queue depth
+GET  /health                      readiness: Postgres + Redis ping (503 on degrade)
+GET  /hubs/status                 SignalR status feed
+```
+
 ## Status
 
-Working vertical slice: ingest with dedup → bounded queue → delivery
-worker → retries → DLQ + replay, plus a SignalR status feed and the
-React dashboard. Remaining core work: token bucket (TASK-004) and the
-retry heap (TASK-005). See [docs/tasks.md](docs/tasks.md) for the
-backlog and [docs/architecture.md](docs/architecture.md) for the
-roadmap.
+Full delivery loop implemented end-to-end: ingest with dedup → atomic
+claim → bounded queue → parallel workers → token bucket → signed send →
+backoff/jitter retries → DLQ + replay — with metrics, readiness, and a
+live dashboard. Remaining: chaos-scenario tests, Docker verification,
+multi-instance concerns (Redis-backed limiter, leader election). See
+[docs/tasks.md](docs/tasks.md) for the backlog and
+[docs/next.md](docs/next.md) for the construction queue.
 
 ## License
 

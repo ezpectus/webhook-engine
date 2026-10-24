@@ -13,6 +13,7 @@ public static class Endpoints
     public static void MapEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/webhooks", RegisterWebhook);
+        app.MapGet("/webhooks", ListWebhooks);
         app.MapPost("/events", IngestEvent);
         app.MapGet("/deadletters", ListDeadLetters);
         app.MapPost("/deadletters/{eventId:guid}/replay", ReplayDeadLetter);
@@ -40,6 +41,16 @@ public static class Endpoints
         await db.SaveChangesAsync(ct);
 
         return Results.Created($"/webhooks/{hook.Id}", new { webhookId = hook.Id });
+    }
+
+    private static async Task<IResult> ListWebhooks(
+        WebhookEngineDbContext db, CancellationToken ct)
+    {
+        var items = await db.Webhooks.AsNoTracking()
+            .OrderBy(w => w.CreatedAt)
+            .Select(w => new { w.Id, w.Url, w.RateLimitPerSecond, w.IsActive, w.CreatedAt })
+            .ToListAsync(ct);
+        return Results.Ok(items);
     }
 
     private static async Task<IResult> IngestEvent(
