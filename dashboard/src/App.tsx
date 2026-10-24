@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as signalR from '@microsoft/signalr'
-import { getStats, getMetrics, getEvents, getDeadLetters, replay, type Stats, type Metrics, type EngineEvent, type DeadLetter } from './api'
+import { getStats, getMetrics, getEvents, getEvent, getDeadLetters, replay, type Stats, type Metrics, type EngineEvent, type EventDetail, type DeadLetter } from './api'
 
 const STATUSES = ['Pending', 'InFlight', 'RetryScheduled', 'Delivered', 'DeadLettered']
 
@@ -14,6 +14,7 @@ export default function App() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [events, setEvents] = useState<EngineEvent[]>([])
+  const [selected, setSelected] = useState<EventDetail | null>(null)
   const [dlq, setDlq] = useState<DeadLetter[]>([])
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [connected, setConnected] = useState(false)
@@ -93,7 +94,7 @@ export default function App() {
             </thead>
             <tbody>
               {events.map(e => (
-                <tr key={e.id}>
+                <tr key={e.id} className="clickable" onClick={() => getEvent(e.id).then(setSelected).catch(() => {})}>
                   <td className="mono">{e.id.slice(0, 8)}</td>
                   <td>{e.status}</td>
                   <td>{e.attemptCount}</td>
@@ -103,6 +104,31 @@ export default function App() {
               {events.length === 0 && <tr><td colSpan={4} className="empty">empty</td></tr>}
             </tbody>
           </table>
+
+          {selected && (
+            <section className="attempts">
+              <h2>Attempts — <span className="mono">{selected.id.slice(0, 8)}</span>
+                <button style={{ marginLeft: 12 }} onClick={() => setSelected(null)}>close</button>
+              </h2>
+              <table>
+                <thead>
+                  <tr><th>#</th><th>At</th><th>HTTP</th><th>ms</th><th>Error</th></tr>
+                </thead>
+                <tbody>
+                  {selected.attempts.map(a => (
+                    <tr key={a.attemptNumber}>
+                      <td>{a.attemptNumber}</td>
+                      <td>{new Date(a.attemptedAt).toLocaleTimeString()}</td>
+                      <td>{a.responseStatusCode ?? '—'}</td>
+                      <td>{a.durationMs}</td>
+                      <td>{a.error ?? '—'}</td>
+                    </tr>
+                  ))}
+                  {selected.attempts.length === 0 && <tr><td colSpan={5} className="empty">no attempts yet</td></tr>}
+                </tbody>
+              </table>
+            </section>
+          )}
 
           <h2 style={{ marginTop: 32 }}>Dead letters</h2>
           <table>

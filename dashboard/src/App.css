@@ -24,3 +24,6 @@ button:hover { border-color: #58a6ff; }
 .feed li { padding: 5px 0; border-bottom: 1px solid #1c1c1c; }
 .feed em { color: #666; font-style: normal; }
 .empty { color: #555; text-align: center; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: #1a1a1a; }
+.attempts { margin-top: 16px; }

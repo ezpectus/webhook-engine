@@ -39,8 +39,24 @@ export interface EngineEvent {
 export const getStats = (): Promise<Stats> =>
   fetch('/stats').then(r => r.json())
 
+export interface EventDetail extends EngineEvent {
+  deliveredAt: string | null
+  createdAt: string
+  attempts: {
+    attemptNumber: number
+    attemptedAt: string
+    responseStatusCode: number | null
+    error: string | null
+    succeeded: boolean
+    durationMs: number
+  }[]
+}
+
 export const getEvents = (): Promise<EngineEvent[]> =>
   fetch('/events?take=30').then(r => r.json())
+
+export const getEvent = (id: string): Promise<EventDetail> =>
+  fetch(`/events/${id}`).then(r => r.json())
 
 export const getMetrics = (): Promise<Metrics> =>
   fetch('/metrics').then(r => r.json())
