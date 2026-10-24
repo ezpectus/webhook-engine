@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as signalR from '@microsoft/signalr'
-import { getStats, getMetrics, getDeadLetters, replay, type Stats, type Metrics, type DeadLetter } from './api'
+import { getStats, getMetrics, getEvents, getDeadLetters, replay, type Stats, type Metrics, type EngineEvent, type DeadLetter } from './api'
 
 const STATUSES = ['Pending', 'InFlight', 'RetryScheduled', 'Delivered', 'DeadLettered']
 
@@ -13,6 +13,7 @@ interface FeedItem {
 export default function App() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [metrics, setMetrics] = useState<Metrics | null>(null)
+  const [events, setEvents] = useState<EngineEvent[]>([])
   const [dlq, setDlq] = useState<DeadLetter[]>([])
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [connected, setConnected] = useState(false)
@@ -22,6 +23,7 @@ export default function App() {
     try {
       setStats(await getStats())
       setMetrics(await getMetrics())
+      setEvents(await getEvents())
       setDlq(await getDeadLetters())
     } catch {
       // API offline — покажем пустое
@@ -84,7 +86,25 @@ export default function App() {
 
       <div className="cols">
         <section>
-          <h2>Dead letters</h2>
+          <h2>Recent events</h2>
+          <table>
+            <thead>
+              <tr><th>Event</th><th>Status</th><th>Tries</th><th>Updated</th></tr>
+            </thead>
+            <tbody>
+              {events.map(e => (
+                <tr key={e.id}>
+                  <td className="mono">{e.id.slice(0, 8)}</td>
+                  <td>{e.status}</td>
+                  <td>{e.attemptCount}</td>
+                  <td>{new Date(e.updatedAt).toLocaleTimeString()}</td>
+                </tr>
+              ))}
+              {events.length === 0 && <tr><td colSpan={4} className="empty">empty</td></tr>}
+            </tbody>
+          </table>
+
+          <h2 style={{ marginTop: 32 }}>Dead letters</h2>
           <table>
             <thead>
               <tr><th>Event</th><th>Reason</th><th>At</th><th></th></tr>

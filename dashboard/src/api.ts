@@ -27,8 +27,20 @@ export interface Metrics {
   }
 }
 
+export interface EngineEvent {
+  id: string
+  webhookId: string
+  status: string
+  attemptCount: number
+  nextAttemptAt: string | null
+  updatedAt: string
+}
+
 export const getStats = (): Promise<Stats> =>
   fetch('/stats').then(r => r.json())
+
+export const getEvents = (): Promise<EngineEvent[]> =>
+  fetch('/events?take=30').then(r => r.json())
 
 export const getMetrics = (): Promise<Metrics> =>
   fetch('/metrics').then(r => r.json())

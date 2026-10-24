@@ -19,6 +19,7 @@ public static class Endpoints
         app.MapGet("/stats", GetStats);
         app.MapGet("/metrics", GetMetrics);
         app.MapGet("/events/{id:guid}", GetEvent);
+        app.MapGet("/events", ListEvents);
     }
 
     private static async Task<IResult> RegisterWebhook(
@@ -212,6 +213,23 @@ public static class Endpoints
             })
             .FirstOrDefaultAsync(ct);
         return ev is null ? Results.NotFound() : Results.Ok(ev);
+    }
+
+    private static async Task<IResult> ListEvents(
+        WebhookEngineDbContext db, CancellationToken ct, int take = 50, string? status = null)
+    {
+        take = Math.Clamp(take, 1, 500);
+        var q = db.Events.AsNoTracking();
+        if (Enum.TryParse<EventStatus>(status, true, out var s))
+            q = q.Where(e => e.Status == s);
+        var items = await q.OrderByDescending(e => e.UpdatedAt).Take(take)
+            .Select(e => new
+            {
+                e.Id, e.WebhookId, e.Status, e.AttemptCount,
+                e.NextAttemptAt, e.UpdatedAt
+            })
+            .ToListAsync(ct);
+        return Results.Ok(items);
     }
 
     private static async Task<IResult> GetMetrics(
