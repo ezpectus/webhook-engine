@@ -1,0 +1,163 @@
+classDiagram
+    direction LR
+
+    namespace Core.Models {
+        class NotificationEvent {
+            +Guid Id
+            +Guid WebhookId
+            +string IdempotencyKey
+            +string Payload
+            +EventStatus Status
+            +int AttemptCount
+            +DateTimeOffset? NextAttemptAt
+            +DateTimeOffset UpdatedAt "lease"
+        }
+        class WebhookEndpoint {
+            +Guid Id
+            +string Url
+            +string? Secret "HMAC"
+            +int RateLimitPerSecond
+            +bool IsActive
+        }
+        class DeliveryAttempt {
+            +int AttemptNumber
+            +int? ResponseStatusCode
+            +string? Error
+            +bool Succeeded
+            +int DurationMs
+        }
+        class DeadLetterItem {
+            +Guid EventId
+            +string Reason
+            +DateTimeOffset? ReplayedAt
+        }
+        class EventStatus {
+            <<enumeration>>
+            Pending
+            InFlight
+            RetryScheduled
+            Delivered
+            DeadLettered
+        }
+    }
+
+    namespace Core.Abstractions {
+        class IDeduplicationStore {
+            <<interface>>
+            +IsKnownAsync(key) bool
+            +MarkAsync(key, window)
+        }
+        class IEventQueue {
+            <<interface>>
+            +TryEnqueue(ev) bool
+            +ReadAllAsync(ct)
+        }
+        class IWebhookRateLimiter {
+            <<interface>>
+            +AcquireDelayAsync(id, rps) TimeSpan
+        }
+        class IRetryScheduler {
+            <<interface>>
+            +ScheduleAsync(id, dueAt)
+            +ReadDueAsync(now)
+        }
+        class IStatusFeed {
+            <<interface>>
+            +PublishAsync(id, status)
+        }
+    }
+
+    namespace Core.Алгоритмы {
+        class TokenBucket {
+            -double _tokens
+            -object _gate
+            +TryTake() bool
+            +TimeUntilAvailable() TimeSpan
+        }
+        class BackoffPolicy {
+            +ComputeDelay(attempt) TimeSpan
+            +IsExhausted(n) bool
+            +MaxAttempts
+        }
+        class HeapRetryScheduler {
+            -PriorityQueue _heap
+            -Dict~Guid,long~ _versions
+            +ScheduleAsync(id, dueAt)
+            +ReadDueAsync(now)
+        }
+        class EngineMetrics {
+            +long DedupHits, SendsOk...
+            +StaleReclaims
+        }
+        class ConsistentHashRing {
+            +AddNode / GetNode(key)
+            "не врезан — scale-волна"
+        }
+    }
+
+    namespace Infrastructure {
+        class WebhookEngineDbContext {
+            DbSet Events, Webhooks, Attempts, DeadLetters
+            +индексы в OnModelCreating
+        }
+        class RedisDeduplicationStore {
+            "fail-open: Redis down → PG решает"
+        }
+        class EventQueue {
+            Channel bounded 10k
+        }
+        class TokenBucketRateLimiter {
+            ConcurrentDict~Guid, TokenBucket~
+        }
+        class WebhookSender {
+            +SendAsync(url, payload, ct, secret?)
+            "HMAC + классификация retryable"
+        }
+    }
+
+    namespace Api {
+        class Program {
+            DI + /health(PG,Redis) + migrations
+        }
+        class Endpoints {
+            <<static>>
+            /events /webhooks /deadletters
+            /stats /metrics /health
+        }
+        class DeliveryWorker {
+            ×4 readers
+            claim→send→ack→schedule
+        }
+        class SweeperService {
+            stale-reclaim + heap/scan → claim→enqueue
+        }
+        class SignalRStatusFeed {
+            publish → /hubs/status
+        }
+    }
+
+    IDeduplicationStore ..|> RedisDeduplicationStore : implements
+    IEventQueue ..|> EventQueue : implements
+    IWebhookRateLimiter ..|> TokenBucketRateLimiter : implements
+    IRetryScheduler ..|> HeapRetryScheduler : implements
+    IStatusFeed ..|> SignalRStatusFeed : implements
+
+    WebhookEndpoint "1" --> "0..*" NotificationEvent
+    NotificationEvent "1" --> "0..*" DeliveryAttempt
+    NotificationEvent "1" --> "0..1" DeadLetterItem
+    NotificationEvent --> EventStatus
+
+    TokenBucketRateLimiter --> TokenBucket : creates
+    Endpoints --> IDeduplicationStore
+    Endpoints --> IEventQueue
+    Endpoints --> WebhookEngineDbContext
+    DeliveryWorker --> IEventQueue
+    DeliveryWorker --> IRetryScheduler
+    DeliveryWorker --> BackoffPolicy
+    DeliveryWorker --> WebhookSender
+    DeliveryWorker --> IWebhookRateLimiter
+    DeliveryWorker --> IStatusFeed
+    SweeperService --> IRetryScheduler
+    SweeperService --> IEventQueue
+    Program --> DeliveryWorker : hosts
+    Program --> SweeperService : hosts

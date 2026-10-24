@@ -1,9 +1,10 @@
 # Диаграммы системы
 
 Файлы-источники (редактируемые): `mmd/` — mermaid (`system.mmd`
-архитектура, `db.mmd` ER-схема); `io/` — draw.io (`system.drawio`,
-`db.drawio`); `schema.sql` — DDL. Mermaid рендерится прямо на GitHub;
-drawio открывается в app.diagrams.net или расширением VS Code.
+архитектура, `db.mmd` ER-схема, `classes.mmd` карта классов); `io/` —
+draw.io (`system.drawio`, `db.drawio`, `classes.drawio`); `schema.sql`
+— DDL. Mermaid рендерится прямо на GitHub; drawio открывается в
+app.diagrams.net или расширением VS Code.
 
 ## Архитектура (компоненты)
 

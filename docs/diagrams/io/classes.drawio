@@ -1,0 +1,60 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Class map — webhook-engine" id="cls1">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ===== Core ===== -->
+        <mxCell id="grpCore" value="Core (без инфра-зависимостей)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fillColor=#f5f5f5;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="680" height="430" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="models" value="&lt;b&gt;Models&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;&lt;b&gt;NotificationEvent&lt;/b&gt; — Id, WebhookId, IdempotencyKey (UNIQUE), Payload jsonb,&lt;br&gt;&amp;nbsp;&amp;nbsp;Status, AttemptCount, NextAttemptAt, UpdatedAt (lease)&lt;br&gt;&lt;b&gt;WebhookEndpoint&lt;/b&gt; — Url, Secret (HMAC), RateLimitPerSecond, IsActive&lt;br&gt;&lt;b&gt;DeliveryAttempt&lt;/b&gt; — AttemptNumber, ResponseStatusCode, Error, Succeeded&lt;br&gt;&lt;b&gt;DeadLetterItem&lt;/b&gt; — EventId, Reason, ReplayedAt&lt;br&gt;&lt;b&gt;EventStatus&lt;/b&gt; — Pending·InFlight·RetryScheduled·Delivered·DeadLettered" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="60" y="80" width="640" height="120" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="contracts" value="&lt;b&gt;Abstractions (контракты границ)&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;IDeduplicationStore — IsKnownAsync / MarkAsync&lt;br&gt;IEventQueue — TryEnqueue / ReadAllAsync&lt;br&gt;IWebhookRateLimiter — AcquireDelayAsync(id, rps) → TimeSpan&lt;br&gt;IRetryScheduler — ScheduleAsync(id, dueAt) / ReadDueAsync(now)&lt;br&gt;IStatusFeed — PublishAsync(id, status)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="60" y="215" width="310" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="algos" value="&lt;b&gt;Алгоритмы (чистые)&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;TokenBucket — _tokens, _gate; TryTake / TimeUntilAvailable&lt;br&gt;BackoffPolicy — ComputeDelay(a), IsExhausted(n), MaxAttempts&lt;br&gt;HeapRetryScheduler — PriorityQueue + _versions (lazy deletion)&lt;br&gt;EngineMetrics — счётчики границ&lt;br&gt;ConsistentHashRing — scale-волна, в систему не врезан" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="390" y="215" width="310" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== Infrastructure ===== -->
+        <mxCell id="grpInfra" value="Infrastructure (EF/Redis/HTTP plumbing)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fillColor=#dae8fc;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="500" width="680" height="230" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="infraL" value="&lt;b&gt;Реализации контрактов&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;RedisDeduplicationStore — SET NX TTL; fail-open&lt;br&gt;EventQueue — bounded Channel (10k)&lt;br&gt;TokenBucketRateLimiter — ConcurrentDict→TokenBucket&lt;br&gt;HeapRetryScheduler реализует IRetryScheduler (Core)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="60" y="540" width="310" height="100" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="infraR" value="&lt;b&gt;Внешний мир&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;WebhookEngineDbContext — Events/Webhooks/Attempts/DeadLetters&lt;br&gt;&amp;nbsp;&amp;nbsp;+ индексы (OnModelCreating)&lt;br&gt;WebhookSender — POST + HMAC, классификация retryable,&lt;br&gt;&amp;nbsp;&amp;nbsp;timeout 10с (HttpClientFactory)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="390" y="540" width="310" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== Api ===== -->
+        <mxCell id="grpApi" value="Api (endpoints + hosted workers)" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fillColor=#d5e8d4;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="40" width="560" height="430" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="apiL" value="&lt;b&gt;Program&lt;/b&gt; — DI, /health(PG+Redis), миграции&lt;br&gt;&lt;br&gt;&lt;b&gt;Endpoints (static)&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;POST /webhooks · GET /webhooks&lt;br&gt;POST /events (dedup→insert→claim→enqueue)&lt;br&gt;GET /events · GET /events/{id}&lt;br&gt;GET /deadletters · POST .../replay&lt;br&gt;GET /stats · GET /metrics" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="780" y="80" width="250" height="180" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="apiR" value="&lt;b&gt;Hosted services&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;&lt;b&gt;DeliveryWorker&lt;/b&gt; — ×4 читателя канала;&lt;br&gt;&amp;nbsp;&amp;nbsp;claim→limiter→send→ack / backoff→schedule / DLQ&lt;br&gt;&lt;br&gt;&lt;b&gt;SweeperService&lt;/b&gt; — каждые 10с: stale-lease reclaim,&lt;br&gt;&amp;nbsp;&amp;nbsp;heap fast-path + PG due-scan → claim→enqueue&lt;br&gt;&lt;br&gt;&lt;b&gt;SignalRStatusFeed&lt;/b&gt; — /hubs/status, ошибки глушим" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;fillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="1050" y="80" width="250" height="200" as="geometry"/>
+        </mxCell>
+
+        <!-- relations -->
+        <mxCell id="r1" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;label=implements;" edge="1" parent="1" source="contracts" target="infraL"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r2" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;" edge="1" parent="1" source="apiL" target="contracts"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r3" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;" edge="1" parent="1" source="apiR" target="infraL"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r4" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;" edge="1" parent="1" source="apiR" target="algos"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
