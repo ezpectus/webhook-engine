@@ -1,8 +1,9 @@
 # Guide — как устроена система
 
 Для себя и для тех, кто подключается. Описывает код **как он есть**,
-а не как задумано. Последнее обновление: стадии 1–4 реализованы
-(приём, dedup, очередь, доставка, sweeper).
+а не как задумано. Последнее обновление 2026-10-25: полный цикл —
+приём, dedup, очередь, параллельные воркеры, rate limiter,
+backoff+jitter+heap, DLQ, HMAC, метрики.
 
 ## Путь события end-to-end
 
@@ -19,18 +20,23 @@ POST /events
   → MarkAsync в Redis (кеш «видели», TTL 24ч)
   → 202 Accepted { eventId }
 
-DeliveryWorker (BackgroundService)
-  → читает канал → находит webhook
-  → WebhookSender.SendAsync (POST, timeout 10с)
+DeliveryWorker (BackgroundService, ×4 параллельных читателя)
+  → читает канал → статус == InFlight? (stale-элементы канала пропускаем)
+  → rate limiter: wait > 0 → RetryScheduled + NextAttemptAt (не попытка)
+  → WebhookSender.SendAsync (POST + HMAC, timeout 10с)
   → пишет DeliveryAttempt (код, ошибка, длительность)
   → 2xx        → Delivered + DeliveredAt        ← это ack
-  → retryable  → RetryScheduled + NextAttemptAt (+30с, заглушка до TASK-005)
+  → retryable  → AttemptCount ≥ 5 → DeadLettered + DeadLetterItem
+               → иначе RetryScheduled + NextAttemptAt =
+                 now + min(5мин, 1с·2^a) + equal jitter; в кучу после save
   → non-retry  → DeadLettered + DeadLetterItem(reason)
   → воркер упал посреди → событие висит InFlight → sweeper вернёт
 
 SweeperService (каждые 10с, бережно)
   → InFlight с UpdatedAt старше 5 мин → Pending (lease reclaim)
-  → Pending/RetryScheduled с NextAttemptAt <= now → InFlight + enqueue
+  → fast path: ReadDueAsync из heap → claim → enqueue
+  → PG-скан (истина): Pending/RetryScheduled с NextAttemptAt <= now
+    → claim → enqueue
 ```
 
 ## Машина состояний `EventStatus`
@@ -58,16 +64,22 @@ SweeperService (каждые 10с, бережно)
 
 | Файл | Что | Зона |
 | --- | --- | --- |
-| `Api/Endpoints/Endpoints.cs` | POST /events, /webhooks, GET /deadletters,<br>POST replay, GET /stats, GET /metrics;<br>threshold, insert-first, atomic claim | юзер ревьюит |
+| `Api/Endpoints/Endpoints.cs` | POST/GET /events·/webhooks, /deadletters,<br>replay, /stats /metrics /events/{id};<br>threshold, insert-first, atomic claim | юзер ревьюит |
 | `Api/Hubs/` | SignalR-фид статусов (`/hubs/status`, метод `"status"`) | платформа |
-| `dashboard/` | React-дашборд: статусы, DLQ+replay, live-фид | платформа |
+| `dashboard/` | React-дашборд: статусы, метрики, события<br>+ attempts, DLQ+replay, live-фид | платформа |
 | `tools/LoadGen/` | генератор нагрузки (rps/burst/dup %) | платформа |
-| `Infrastructure/Redis/RedisDeduplicationStore.cs` | dedup-кеш, fail-open | юзер ревьюит |
+| `tools/MockReceiver/` | приёмник с режимами хаоса (500/429/slow/flap) | платформа |
+| `Infrastructure/Redis/RedisDeduplicationStore.cs` | dedup-кеш, fail-open (abortConnect=false) | юзер ревьюит |
 | `Infrastructure/Queues/EventQueue.cs` | bounded channel 10k | ревью |
-| `Api/Workers/DeliveryWorker.cs` | отправка, попытки, статусы | ревью |
-| `Api/Workers/SweeperService.cs` | lease reclaim + due scan | ревью |
-| `Infrastructure/Delivery/WebhookSender.cs` | HTTP send, классификация ошибок | платформа |
-| `Core/RateLimiting/TokenBucket.cs` | **руками юзера — TASK-004** | пустой скелет |
+| `Api/Workers/DeliveryWorker.cs` | ×4 читателя; send, попытки, backoff→DLQ | ревью |
+| `Api/Workers/SweeperService.cs` | lease reclaim + heap fast-path + due scan | ревью |
+| `Infrastructure/Delivery/WebhookSender.cs` | HTTP send + HMAC, классификация ошибок | платформа |
+| `Core/RateLimiting/TokenBucket.cs` | token bucket (юзер в `/* */` + референс) | review |
+| `Infrastructure/RateLimiting/TokenBucketRateLimiter.cs` | ConcurrentDict → bucket per webhook | ревью (L1/L3) |
+| `Core/RetryScheduling/BackoffPolicy.cs` | exp·2^a + equal jitter + cap + MaxAttempts | review (S2–S5) |
+| `Core/RetryScheduling/HeapRetryScheduler.cs` | PriorityQueue + версии (lazy deletion) | review |
+| `Core/Metrics/EngineMetrics.cs` | счётчики границ → /metrics | платформа |
+| `Core/Hashing/ConsistentHashRing.cs` | готов, не врезан — scale-волна | review |
 
 ## Конфиг (appsettings.json)
 
@@ -79,24 +91,33 @@ SweeperService (каждые 10с, бережно)
 | `Sweeper:IntervalSeconds` | 10 | период обхода |
 | `Sweeper:BatchSize` | 500 | батч за обход |
 | `Sweeper:InFlightTimeoutMinutes` | 5 | lease-протухание |
-| `Delivery:RetryDelaySeconds` | 30 | плоская задержка (→ backoff в TASK-005) |
+| `Delivery:WorkerParallelism` | 4 | параллельных читателей канала |
+| `Retry:BaseDelaySeconds` | 1 | база экспоненты |
+| `Retry:MaxDelaySeconds` | 300 | cap backoff |
+| `Retry:MaxAttempts` | 5 | потолок → DLQ |
 
 ## Известные края (не баги — предметы разговора)
 
-- **Гонка ingest↔sweeper enqueue**: `SaveChanges(Pending)` → `TryEnqueue`
-  не атомарны; sweeper может подхватить событие между ними → двойной
-  enqueue → дубль доставки. Легально по at-least-once, но лечится
-  compare-and-set (`UPDATE ... WHERE Status='Pending'`). — обсудить
-- Rate limiter не подключён (TASK-004), backoff — плоский (TASK-005)
-- Воркер один последовательный — масштаб читателей канала потом
+- ~~Гонка enqueue~~ ✓ починена атомарным claim `Pending→InFlight`
+  (`0829b37`)
+- **В7 — параллельный дубль через медленный канал**: backlog > 5 мин →
+  InFlight протухает → reclaim → второй enqueue → два воркера шлют
+  одновременно. Дубль легален; `AttemptCount` теряет инкремент
+  (last-write-wins). Чинить lease-version или документировать — вопрос
+  в `open_questions.md`
+- In-memory лимитер и heap — одноинстансные (scale-волна: Redis +
+  leader-election)
+- `AttemptCount` не защищён concurrency-токеном — см. В7
 
 ## Запуск
 
 ```bash
 docker compose -p webhook-engine up -d postgres redis
 dotnet run --project src/WebhookEngine.Api          # :5269
+dotnet run --project tools/MockReceiver             # :5005 приёмник
 cd dashboard && npm run dev                          # :5173
-# POST /webhooks {"url":"https://..."} → POST /events {"webhookId":"..","payload":"{}"}
+# POST /webhooks {"url":"http://localhost:5005/hook?mode=flap","secret":"s3"}
+#   → POST /events {"webhookId":"..","payload":"{}"}
 # нагрузка:
 dotnet run --project tools/LoadGen -- --webhook <guid> --rps 100 --dup 0.2
 ```

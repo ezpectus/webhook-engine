@@ -11,7 +11,46 @@
 
 ## 2026-10-25
 
-### `pending` — TASK-005 retry scheduler (делегировано) [D]
+### `c4f26e6` — карта классов [docs]
+- `docs/diagrams/mmd/classes.mmd` + `io/classes.drawio` — классы по слоям
+
+### `55ebef6` `3fc6ebe` — open_questions: оценки + указатели [docs]
+- В2~/В4✓/В5~; карта «что где живёт»; файлы к каждому вопросу
+
+### `dad44f3` — `2c9ad6e` — ревью-фикс + сортировка диаграмм [D+docs]
+- `DeliveryWorker.cs` — гард `Status != InFlight → skip` stale-элементов
+- вопрос В7 открыт (параллельный дубль через медленный канал)
+- `docs/diagrams/{mmd,io}/` — подпапки по форматам
+
+### `b8a6a2f` — диаграммы-комплект [docs]
+- `system.mmd/.drawio`, `db.mmd/.drawio`, `schema.sql` (с partial-index блоком)
+
+### `a711832` — read-side + доки [D+docs]
+- `Endpoints.cs` — `GET /webhooks`, `GET /events` (take/status)
+- ER-диаграмма; README API surface; PLAN журнал + L4; tasks 010/011 + P-12
+
+### `83db57a` — fail-open на DI-границе [D]
+- `DependencyInjection.cs` — `abortConnect=false`: мёртвый Redis больше
+  не роняет ingest на резолве мультиплексора
+
+### `0202132` `af35470` — дашборд: события и attempts [D]
+- `App.tsx/api.ts/App.css` — таблица Recent events + клик → история попыток
+
+### `7b98a8d` `24decef` — журналы + событие-деталь [D+docs]
+- `GET /events/{id}` с историей attempts; MockReceiver `DELETE /received`
+- done-log (P-08…P-11) + PLAN журнал
+
+### `0c85148` `1539c03` — модель разработки + отметки тасок [docs]
+- AGENTS: Kanban + XP соло; tasks.md: TASK-009→review, P-09, список сессии
+
+### `8ff1f7b` — тесты лимитера [D]
+- `TokenBucketRateLimiterTests.cs` — 4 кейса (32/32); вопрос L3 открыт
+
+### `a8aa8e5` — метрики в дашборд + концепции [D+docs]
+- api.ts/App.tsx/App.css — metrics strip; прокси `/metrics` (vite+nginx)
+- `concepts.md` — HMAC + playbook прогона
+
+### `633e8e7` — TASK-005 retry scheduler (делегировано) [D]
 - `Core/RetryScheduling/BackoffPolicy.cs` — NEW: `min(cap, base·2^a)` + equal jitter, `MaxAttempts`
 - `Core/RetryScheduling/HeapRetryScheduler.cs` — NEW: PriorityQueue + версионный lazy deletion (S1)
 - `DeliveryWorker.cs` — backoff вместо flat-delay; max-attempts → DLQ; schedule в кучу после SaveChanges
@@ -19,6 +58,9 @@
 - `DependencyInjection.cs`, `appsettings.json` (секция `Retry`)
 - `RetrySchedulerTests.cs` — 8 кейсов; 40/40
 - Таски: TASK-005 → review; вопрос S1 закрыт
+
+### `8d6b34d` `47df4b5` — HMAC + MockReceiver + воркеры ×4 [D]
+- см. записи ниже за 2026-10-24 (относятся к этой же работе)
 
 ## 2026-10-24
 
