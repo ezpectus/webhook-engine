@@ -15,5 +15,9 @@
 | **P-05** SignalR фид | `/hubs/status`, метод `"status"`, паблиш из воркера | `ae66ed0` | `review` — ждёт живого клиента |
 | **P-06** Dashboard | React+TS: статусы, DLQ+replay, live-фид; vite-прокси | `6723984` `1732e7f` | `review` |
 | **P-07** LoadGen | `tools/LoadGen` (rps/burst/dup счётчики) | `1732e7f` | `review` — ждёт API |
+| **P-08** Метрики + readiness | `EngineMetrics` счётчики на границах; `GET /metrics` (ratios+depth+dlq); `/health` пингует PG+Redis; панель в дашборде | `cb17bbd` `a8aa8e5` | done |
+| **P-09** HMAC подпись | `X-Webhook-Signature: sha256=<hex>` по `WebhookEndpoint.Secret` (D14); MockReceiver логирует подпись | `8d6b34d` | `review` — ждёт живой приём |
+| **P-10** MockReceiver | `tools/MockReceiver`: `?mode=ok|500|429|slow|flap|drop`, `GET /received`; compose-сервис :5005 | `47df4b5` `8d6b34d` | done |
+| **P-11** Параллельные воркеры | `Delivery:WorkerParallelism` (4): N читателей канала | `47df4b5` | done |
 | **TASK-002** Dedup приём | insert-first, `23505`→duplicate, fail-open Redis | `c781b8c` | `review` — чекпоинты частично |
 | **TASK-003** Очередь | bounded channel + потолок (D3) + sweeper/lease; гонка В3 починена | `9da2bec` `0829b37` | `review` |
