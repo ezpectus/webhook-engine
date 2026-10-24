@@ -60,7 +60,10 @@ public sealed class DeliveryWorker(
         CancellationToken ct)
     {
         var tracked = await db.Events.FindAsync([ev.Id], ct);
-        if (tracked is null)
+        // Канал мог доставить устаревший элемент: пока он ждал, событие
+        // уже доставлено, реплеировано или задедлеттерено. В очередь
+        // попадают только InFlight — всё остальное пропускаем (В-ревью).
+        if (tracked is null || tracked.Status != EventStatus.InFlight)
             return;
 
         var webhook = await db.Webhooks.FindAsync([ev.WebhookId], ct);

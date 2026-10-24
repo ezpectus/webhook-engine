@@ -14,6 +14,12 @@
 - **В5** — воркер ставит `RetryScheduled` + `NextAttemptAt` и молчит.
   Кто и через какой запрос достаёт его, когда время придёт?
   (место в `SweeperService`)
+- **В7** — медленный канал (>5 мин backlog): InFlight с протухшим
+  lease → sweeper реклеймит → второй enqueue → два воркера шлют
+  параллельно. Дубль легален по at-least-once — но посчитай: что
+  случится с `AttemptCount` у обоих (оба прочли N, оба пишут N+1)?
+  Чинить ли (lease-version claim) или документировать как допустимую
+  границу дубля?
 - **DLQ** — `ReplayDeadLetter`: семантика D12 (обход dedup,
   `AttemptCount → 0`, история попыток — аудит). Согласие или правки?
 - **API-change** — `AcquireDelayAsync` получила `permitsPerSecond`.
