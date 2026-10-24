@@ -10,6 +10,8 @@ h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: #
 .card.alert { border-color: #f85149; }
 .card-num { font-size: 28px; font-weight: 700; }
 .card-label { font-size: 12px; color: #888; margin-top: 4px; }
+.metrics { display: flex; gap: 24px; background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; padding: 10px 16px; margin-bottom: 32px; font-size: 13px; color: #888; }
+.metrics b { color: #e6e6e6; font-family: ui-monospace, monospace; }
 .cols { display: grid; grid-template-columns: 2fr 1fr; gap: 32px; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: #888; font-weight: 500; padding: 6px 8px; border-bottom: 1px solid #2a2a2a; }

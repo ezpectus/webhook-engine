@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as signalR from '@microsoft/signalr'
-import { getStats, getDeadLetters, replay, type Stats, type DeadLetter } from './api'
+import { getStats, getMetrics, getDeadLetters, replay, type Stats, type Metrics, type DeadLetter } from './api'
 
 const STATUSES = ['Pending', 'InFlight', 'RetryScheduled', 'Delivered', 'DeadLettered']
 
@@ -12,6 +12,7 @@ interface FeedItem {
 
 export default function App() {
   const [stats, setStats] = useState<Stats | null>(null)
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [dlq, setDlq] = useState<DeadLetter[]>([])
   const [feed, setFeed] = useState<FeedItem[]>([])
   const [connected, setConnected] = useState(false)
@@ -20,6 +21,7 @@ export default function App() {
   const refresh = async () => {
     try {
       setStats(await getStats())
+      setMetrics(await getMetrics())
       setDlq(await getDeadLetters())
     } catch {
       // API offline — покажем пустое
@@ -68,6 +70,16 @@ export default function App() {
           <div className="card-num">{stats?.liveDeadLetters ?? 0}</div>
           <div className="card-label">DLQ live</div>
         </div>
+      </section>
+
+      <section className="metrics">
+        {metrics && (<>
+          <span>dedup hits <b>{(metrics.dedup_hit_ratio * 100).toFixed(1)}%</b></span>
+          <span>retry rate <b>{(metrics.delivery_retry_rate * 100).toFixed(1)}%</b></span>
+          <span>rejected <b>{metrics.counters.EventsRejected}</b></span>
+          <span>limiter pauses <b>{metrics.counters.LimiterDelays}</b></span>
+          <span>stale reclaims <b>{metrics.counters.StaleReclaims}</b></span>
+        </>)}
       </section>
 
       <div className="cols">

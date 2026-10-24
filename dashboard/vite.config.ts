@@ -8,6 +8,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/stats': api,
+      '/metrics': api,
       '/events': api,
       '/webhooks': api,
       '/deadletters': api,

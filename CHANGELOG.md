@@ -11,6 +11,24 @@
 
 ## 2026-10-24
 
+### `8d6b34d` — HMAC подпись + receiver в compose [D]
+- `WebhookSender.cs` — `SendAsync(..., secret?)`: `X-Webhook-Signature: sha256=<hex>` (D14)
+- `DeliveryWorker.cs` — передаёт `webhook.Secret`; `WebhookSenderTests` +2 теста (28/28)
+- `tools/MockReceiver/` — лог signature-заголовка, `ASPNETCORE_URLS` вместо localhost (fix для контейнера), `Dockerfile`
+- `docker-compose.yml` — сервис `mockreceiver` на :5005
+- Таски: D14-этап, P-09 частично
+
+### `47df4b5` — MockReceiver + параллельные воркеры [D]
+- `tools/MockReceiver/` — NEW: `POST /hook` + `?mode=500|429|slow|flap|drop`, `GET /received` (полигон хаоса)
+- `DeliveryWorker.cs` — `Delivery:WorkerParallelism` (дефолт 4): N читателей канала, каждый элемент одному воркеру
+- `appsettings.json`
+
+### `cb17bbd` — воркфлоу-доки + метрики [D+docs]
+- `AGENTS.md` — переписан структурно; `docs/README.md` (индекс), `docs/next.md` (роадмап) — NEW
+- `Program.cs` — `GET /metrics`; `/health` → readiness: пинг PG+Redis, 503 при деградации
+- `Core/Metrics/EngineMetrics.cs` — счётчики dedup/send/limiter/reclaim
+- `Endpoints.cs`, `DeliveryWorker.cs`, `SweeperService.cs` — точки инкремента
+
 ### `0829b37` — race fix + лимитер врезка + hash ring [D]
 - `Endpoints.cs` — атомарный claim `Pending→InFlight` (гонка В3)
 - `SweeperService.cs` — тот же claim в due-scan + откат при полном канале
