@@ -18,6 +18,7 @@ public static class Endpoints
         app.MapPost("/deadletters/{eventId:guid}/replay", ReplayDeadLetter);
         app.MapGet("/stats", GetStats);
         app.MapGet("/metrics", GetMetrics);
+        app.MapGet("/events/{id:guid}", GetEvent);
     }
 
     private static async Task<IResult> RegisterWebhook(
@@ -190,6 +191,27 @@ public static class Endpoints
             byStatus = byStatus.ToDictionary(x => x.Status.ToString(), x => x.Count),
             liveDeadLetters
         });
+    }
+
+    private static async Task<IResult> GetEvent(
+        Guid id, WebhookEngineDbContext db, CancellationToken ct)
+    {
+        var ev = await db.Events.AsNoTracking()
+            .Where(e => e.Id == id)
+            .Select(e => new
+            {
+                e.Id, e.WebhookId, e.Status, e.AttemptCount,
+                e.NextAttemptAt, e.DeliveredAt, e.CreatedAt, e.UpdatedAt,
+                Attempts = e.Attempts
+                    .OrderBy(a => a.AttemptNumber)
+                    .Select(a => new
+                    {
+                        a.AttemptNumber, a.AttemptedAt, a.ResponseStatusCode,
+                        a.Error, a.Succeeded, a.DurationMs
+                    })
+            })
+            .FirstOrDefaultAsync(ct);
+        return ev is null ? Results.NotFound() : Results.Ok(ev);
     }
 
     private static async Task<IResult> GetMetrics(

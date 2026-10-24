@@ -46,6 +46,7 @@ app.MapPost("/hook", async (HttpRequest req) =>
 });
 
 app.MapGet("/received", () => Results.Ok(received.Reverse()));
+app.MapDelete("/received", () => { while (received.TryDequeue(out _)) { } return Results.NoContent(); });
 app.MapGet("/health", () => Results.Ok(new { status = "ok", received = received.Count }));
 
 app.Run(Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://+:5005");
