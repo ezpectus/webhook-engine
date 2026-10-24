@@ -1,0 +1,41 @@
+flowchart TB
+    subgraph Clients["Клиенты"]
+        C1[Client services]
+    end
+
+    subgraph Ingest["Приём"]
+        API[Ingest API<br/>POST /events]
+    end
+
+    subgraph Dur["Персистентность"]
+        PG[(PostgreSQL<br/>events · attempts · dead_letters)]
+        RDS[(Redis<br/>dedup keys · fail-open)]
+    end
+
+    subgraph Pipe["Пайплайн доставки"]
+        Q[(Bounded channel<br/>ускоритель)]
+        W[Workers ×4<br/>claim → send → ack]
+        RL{Token bucket<br/>per webhook}
+        RH[Retry heap — ускоритель<br/>+ PG NextAttemptAt — истина<br/>backoff · jitter · max 5]
+        SW[Sweeper<br/>lease reclaim + due scan]
+        DLQ[(Dead letters + replay)]
+    end
+
+    subgraph Obs["Наблюдаемость"]
+        SIG[SignalR hub]
+        DASH[React dashboard<br/>/metrics /stats /events]
+    end
+
+    C1 -->|POST /events| API
+    API --> RDS
+    API --> PG
+    PG --> Q --> W --> RL
+    RL -->|HTTP + HMAC| EXT[External webhook endpoints]
+    W -->|status| SIG --> DASH
+    W -.->|exhausted| DLQ
+    W -.->|retry| RH
+    RH -.->|due| SW
+    SW -->|Pending → InFlight| Q
+    SW -.->|stale InFlight → Pending| PG
+    DASH -->|replay| Q
+    API -->|status| SIG
