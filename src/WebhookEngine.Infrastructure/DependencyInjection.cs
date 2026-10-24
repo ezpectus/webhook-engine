@@ -19,7 +19,14 @@ public static class DependencyInjection
             o.UseNpgsql(config.GetConnectionString("Postgres")));
 
         var redis = config.GetConnectionString("Redis") ?? "localhost:6379";
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis));
+        // abortConnect=false: Connect() не бросает при мёртвом Redis —
+        // возвращает мультиплексор в disconnected-режиме (ретраит в фоне).
+        // Иначе резолв IConnectionMultiplexer кинул бы исключение и
+        // fail-open семантика dedup ломалась бы на DI-границе: Redis down
+        // = ingest down, чего быть не должно (PG-индекс — страж).
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+            ConnectionMultiplexer.Connect(
+                ConfigurationOptions.Parse($"{redis},abortConnect=false")));
 
         services.AddSingleton<IDeduplicationStore, RedisDeduplicationStore>();
         services.AddSingleton<IEventQueue, EventQueue>();
