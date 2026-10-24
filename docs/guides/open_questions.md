@@ -5,6 +5,8 @@
 
 ## Ревью кода (платформа Devin)
 
+- ~~**В3**~~ ✓ закрыт кодом: атомарный claim `Pending→InFlight` в ingest
+  и sweeper (`0829b37`); двойной enqueue исключён
 - **В2** — `Endpoints.cs:70-73`: почему `depth` считает Pending +
   InFlight + RetryScheduled вместе, а не только Pending?
 - **В4** — `EventQueue`: `TryEnqueue` вернул `false` при полном канале.
@@ -14,6 +16,8 @@
   (место в `SweeperService`)
 - **DLQ** — `ReplayDeadLetter`: семантика D12 (обход dedup,
   `AttemptCount → 0`, история попыток — аудит). Согласие или правки?
+- **API-change** — `AcquireDelayAsync` получила `permitsPerSecond`.
+  Ок или спрятать rate внутрь лимитера (тогда он лезет в конфиг/БД)?
 
 ## Решения на подходе (нужны для твоих тасок)
 

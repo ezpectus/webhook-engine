@@ -1,81 +1,67 @@
-# Changelog — сделанные таски
+# Changelog — коммиты → файлы → таски
 
-Правило (AGENTS.md §19): закрытые таски выгружаются сюда со ссылками
-на файлы и коммиты, а из `docs/tasks.md` удаляются — там живёт только
-актуальный бэклог. Таски в статусе `review` остаются в tasks.md, пока
-юзер не подтвердит ревью — потом переезжают сюда.
+Воркфлоу (AGENTS.md §19): закрытые таски переезжают в
+`docs/done-log.md` (вид «по задачам»), сюда падает карта
+«коммит → файлы → таск». `tasks.md` — только живой бэклог.
+
+Легенда зон: **[U]** — юзер писал руками · **[D]** — Devin
+(платформа/делегировано) · **[docs]** — документы/решения.
 
 ---
 
-## 2026-10-20 — платформа закрыта
+## 2026-10-24
 
-### P-07 · Генератор нагрузки
-- `tools/LoadGen/` — консоль (`--webhook --rps --seconds --burst --dup`),
-  счётчики accepted/duplicate/err
-- commit `1732e7f`
+### `0829b37` — race fix + лимитер врезка + hash ring [D]
+- `Endpoints.cs` — атомарный claim `Pending→InFlight` (гонка В3)
+- `SweeperService.cs` — тот же claim в due-scan + откат при полном канале
+- `DeliveryWorker.cs` — rate limiter: `wait>0` → `RetryScheduled` (D7)
+- `IWebhookRateLimiter.cs` — сигнатура `+permitsPerSecond` (на ревью)
+- `RateLimiting/TokenBucketRateLimiter.cs` — NEW (ConcurrentDictionary, D6)
+- `Core/Hashing/ConsistentHashRing.cs` + `ConsistentHashRingTests.cs` — NEW (TASK-008, не врезан)
+- `DependencyInjection.cs`, `PLAN.md`, `tasks.md`
+- Таски: В3-fix, TASK-004-врезка, TASK-008
 
-### P-02 · Postgres: схема + миграции
-- `src/WebhookEngine.Infrastructure/Persistence/WebhookEngineDbContext.cs`
-- миграции `Migrations/`: Initial + `AddEventUpdatedAt`
-- решение: без `IRepository` поверх EF (D15)
-- commits `5de7629`, `9da2bec`
+### `ee8ea8e` — TASK-004 юзер + тесты [U+D]
+- `TokenBucket.cs` — версия юзера в `/* */`, референс живой
+- `TokenBucketTests.cs` — 6 кейсов на FakeTimeProvider
+- Таски: TASK-004 → review
 
-### Dashboard в compose
-- `dashboard/Dockerfile`, `dashboard/nginx.conf` (прокси + ws → api:8080),
-  `docker-compose.yml` сервис `dashboard` на :3000
-- commit `1732e7f` — ⚠ не проверено, Docker Desktop не поднят
+## 2026-10-21/22 — гайды и скелеты [docs]
 
-## 2026-10-19 — DLQ, наблюдаемость, архитектурное решение
+- `743d15b` — `guides/task005_walkthrough.md`, `guides/open_questions.md`, чистые комменты bucket
+- `8cda683` — walkthrough 004: C2-English + русская версия
+- `45b2f4b` — `guides/task004_walkthrough.md` (EN)
+- `0b80a71` — скелет TokenBucket + `Microsoft.Extensions.TimeProvider.Testing`; D16
+- `a5c388c` — метка «руками» на 004/005; скелет; чекпоинты в журнал
 
-### TASK-006 · DLQ endpoints (делегировано, семантика на ревью юзера)
-- `Endpoints.cs`: `GET /deadletters`, `POST /deadletters/{id}/replay`
-  (D12: обход dedup, AttemptCount→0, история — аудит)
-- commit `cf0ef7c`
+## 2026-10-20 — платформа закрыта [D]
 
-### P-05 · SignalR status feed
-- `Api/Hubs/StatusFeedHub.cs`, `SignalRStatusFeed.cs`,
-  `Core/Abstractions/IStatusFeed.cs`; воркер паблишит после SaveChanges
-- commit `ae66ed0`
+- `2495e3c` — `CHANGELOG.md`, AGENTS §19, чистка tasks.md
+- `1732e7f` — `tools/LoadGen/` (P-07); `dashboard/Dockerfile`+`nginx.conf`; compose `dashboard`; P-02 закрыт (без IRepository, D15)
+- `24c55d6` — `docs/guides/` + `concepts.md` (CORS/CQRS); README sync
+- `dfbea8c` — `docs/guide.md` онбординг; architecture/diagrams sync
 
-### P-06 · React-дашборд
-- `dashboard/` (Vite+React+TS): карточки статусов, DLQ+replay, live-фид;
-  `GET /stats`; vite-прокси → :5269
-- commit `6723984`
+## 2026-10-19 — DLQ, наблюдаемость, стиль [D+docs]
 
-### P-04 · WebhookSender + тесты классификации
-- `Infrastructure/Delivery/WebhookSender.cs`;
-  `tests/WebhookEngine.Tests/WebhookSenderTests.cs` (11 кейсов)
-- commits `9da2bec`, `ae66ed0`
+- `6723984` — `dashboard/` (React+TS, P-06): stats/DLQ-replay/live-фид; `GET /stats`; `docs/task_guide.md`
+- `ae66ed0` — `Api/Hubs/` (SignalR фид, P-05); `IStatusFeed`; `WebhookSenderTests` (P-04 done)
+- `cf0ef7c` — DLQ endpoints list+replay (TASK-006 делег.); `EventQueueTests`
+- `a1478b6` — D15 арх. стиль в `architecture.md`; step-гайды к 004/005
 
-### Документы
-- `docs/architecture.md` — раздел «Архитектурный стиль» (D15: модульный
-  монолит, не микросервисы/многослойка)
-- `docs/guides/task_guide.md`, `docs/guides/concepts.md` (CORS/CQRS)
-- `docs/guide.md` — онбординг по системе
-- commits `a1478b6`, `dfbea8c`, `24c55d6`
+## 2026-10-17 — приём → доставка [D]
 
-## 2026-10-17 — приём, очередь, доставка
+- `9da2bec` — `EventQueue`, `DeliveryWorker`, `SweeperService`, `WebhookSender`; `UpdatedAt` миграция; appsettings (TASK-003)
+- `cf61d12` — D3: PG-очередь, reject при `Pending` > порога
+- `c781b8c` — `Endpoints.cs` ingest-first + `RedisDeduplicationStore` (TASK-002): `23505`→duplicate, fail-open
+- `997ab7c` — раунд решений D1–D14 в журнал
+- `ac32169` — диаграммы; решения TASK-002 · `51ae715` — dedup TTL 24ч
+- `8a740a6` — правила тренажёра (§17–18) · `153056c` — README на EN
+- `8cd2c8a` — TASK-001: data flow, карта дубль/потеря, журнал
+- `eac4f40` — детализация тикетов + rationale схемы
 
-### TASK-002 · Приём + dedup (review закрыт частично)
-- `Endpoints.cs` IngestEvent: insert-first, `23505`→duplicate, самолечение
-  кеша; `Infrastructure/Redis/RedisDeduplicationStore.cs` — fail-open
-- commit `c781b8c`
+## 2026-10-16 — каркас [D+docs]
 
-### TASK-003 · Очередь + backpressure (D3: вариант D с потолком)
-- `Infrastructure/Queues/EventQueue.cs` (bounded 10k, TryWrite)
-- `Api/Workers/DeliveryWorker.cs`, `Api/Workers/SweeperService.cs`
-  (lease `InFlight` + `UpdatedAt`, stale-reclaim 5мин, due-scan 10с)
-- `tests/WebhookEngine.Tests/EventQueueTests.cs`
-- commits `9da2bec`, `cf0ef7c`
-
-## 2026-10-16 — каркас
-
-### P-01 · Scaffold
-- solution `src/WebhookEngine.{Api,Core,Infrastructure}` + `tests/`
-- `/health`, DI, `AddInfrastructure`
-- `.gitignore`, `Dockerfile`, `.dockerignore`, `docker-compose.yml`
-- commits `4b7370f`, `c38659c`, `5de7629`
-
-### Документы проекта
-- `AGENTS.md` (правила 50/50), `README.md`, `PLAN.md`,
-  `docs/architecture.md`, `docs/tasks.md`, `docs/diagrams/system.md`
+- `5de7629` — solution `src/*` + `tests/*`, EF-схема + Initial миграция, `Dockerfile`, `docker-compose.yml`, `.dockerignore` (P-01, P-02)
+- `e42b4e7` — расширенный бэклог `tasks.md` · `540c1ed` — режимы усталости
+- `c38659c` — README, `docs/architecture.md`, `PLAN.md`, `.gitignore`
+- `4b7370f` — `AGENTS.md`
