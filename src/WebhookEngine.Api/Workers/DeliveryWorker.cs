@@ -23,10 +23,11 @@ public sealed class DeliveryWorker(
             var sender = scope.ServiceProvider.GetRequiredService<WebhookSender>();
             var feed = scope.ServiceProvider.GetRequiredService<IStatusFeed>();
             var limiter = scope.ServiceProvider.GetRequiredService<IWebhookRateLimiter>();
+            var metrics = scope.ServiceProvider.GetRequiredService<WebhookEngine.Core.Metrics.EngineMetrics>();
 
             try
             {
-                await ProcessAsync(ev, db, sender, feed, limiter, retryDelay, stoppingToken);
+                await ProcessAsync(ev, db, sender, feed, limiter, metrics, retryDelay, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -42,6 +43,7 @@ public sealed class DeliveryWorker(
         WebhookSender sender,
         IStatusFeed feed,
         IWebhookRateLimiter limiter,
+        WebhookEngine.Core.Metrics.EngineMetrics metrics,
         TimeSpan retryDelay,
         CancellationToken ct)
     {
@@ -58,6 +60,7 @@ public sealed class DeliveryWorker(
             var wait = await limiter.AcquireDelayAsync(webhook.Id, webhook.RateLimitPerSecond, ct);
             if (wait > TimeSpan.Zero)
             {
+                metrics.LimiterDelay();
                 tracked.Status = EventStatus.RetryScheduled;
                 tracked.NextAttemptAt = DateTimeOffset.UtcNow + wait;
                 tracked.UpdatedAt = DateTimeOffset.UtcNow;
@@ -88,11 +91,13 @@ public sealed class DeliveryWorker(
 
         if (result.Success)
         {
+            metrics.SendOk();
             tracked.Status = EventStatus.Delivered;
             tracked.DeliveredAt = now;
         }
         else if (!result.IsRetryable)
         {
+            metrics.SendNonRetryable();
             tracked.Status = EventStatus.DeadLettered;
             db.DeadLetters.Add(new DeadLetterItem
             {
@@ -103,6 +108,7 @@ public sealed class DeliveryWorker(
         }
         else
         {
+            metrics.SendRetryable();
             // Placeholder flat delay — настоящий backoff+jitter это TASK-005.
             tracked.Status = EventStatus.RetryScheduled;
             tracked.NextAttemptAt = now + retryDelay;

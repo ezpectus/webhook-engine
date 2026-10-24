@@ -40,6 +40,7 @@ public sealed class SweeperService(
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<WebhookEngineDbContext>();
+        var metrics = scope.ServiceProvider.GetRequiredService<WebhookEngine.Core.Metrics.EngineMetrics>();
         var now = DateTimeOffset.UtcNow;
 
         // Воркер умер посреди send — событие зависло в InFlight. Lease истёк → назад в Pending.
@@ -50,7 +51,10 @@ public sealed class SweeperService(
                 .SetProperty(e => e.Status, EventStatus.Pending)
                 .SetProperty(e => e.UpdatedAt, now), ct);
         if (stale > 0)
+        {
+            metrics.StaleReclaim(stale);
             logger.LogWarning("Reclaimed {Count} stale in-flight events", stale);
+        }
 
         var due = await db.Events
             .Where(e => (e.Status == EventStatus.Pending || e.Status == EventStatus.RetryScheduled)

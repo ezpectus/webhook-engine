@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddSingleton<IDeduplicationStore, RedisDeduplicationStore>();
         services.AddSingleton<IEventQueue, EventQueue>();
         services.AddSingleton<IWebhookRateLimiter, RateLimiting.TokenBucketRateLimiter>();
+        services.AddSingleton<Core.Metrics.EngineMetrics>();
         services.AddHttpClient<WebhookSender>(c => c.Timeout = TimeSpan.FromSeconds(10));
 
         return services;

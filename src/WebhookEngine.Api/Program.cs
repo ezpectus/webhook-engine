@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 using WebhookEngine.Api.Endpoints;
 using WebhookEngine.Api.Workers;
 using WebhookEngine.Infrastructure;
@@ -25,7 +26,17 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", async (WebhookEngineDbContext db, IConnectionMultiplexer redis, CancellationToken ct) =>
+{
+    var pg = await Safe(() => db.Database.CanConnectAsync(ct));
+    var rd = await Safe(async () => (await redis.GetDatabase().PingAsync()).TotalMilliseconds >= 0);
+    return pg && rd
+        ? Results.Ok(new { status = "ok", postgres = true, redis = true })
+        : Results.Json(new { status = "degraded", postgres = pg, redis = rd }, statusCode: 503);
+
+    static async Task<bool> Safe(Func<Task<bool>> check)
+    { try { return await check(); } catch { return false; } }
+});
 
 app.MapEndpoints();
 app.MapHub<WebhookEngine.Api.Hubs.StatusFeedHub>("/hubs/status");

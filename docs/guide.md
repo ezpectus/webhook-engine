@@ -58,7 +58,7 @@ SweeperService (каждые 10с, бережно)
 
 | Файл | Что | Зона |
 | --- | --- | --- |
-| `Api/Endpoints/Endpoints.cs` | POST /events, /webhooks, GET /deadletters,<br>POST replay, GET /stats; threshold, insert-first | юзер ревьюит |
+| `Api/Endpoints/Endpoints.cs` | POST /events, /webhooks, GET /deadletters,<br>POST replay, GET /stats, GET /metrics;<br>threshold, insert-first, atomic claim | юзер ревьюит |
 | `Api/Hubs/` | SignalR-фид статусов (`/hubs/status`, метод `"status"`) | платформа |
 | `dashboard/` | React-дашборд: статусы, DLQ+replay, live-фид | платформа |
 | `tools/LoadGen/` | генератор нагрузки (rps/burst/dup %) | платформа |

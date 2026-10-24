@@ -17,6 +17,7 @@ public static class Endpoints
         app.MapGet("/deadletters", ListDeadLetters);
         app.MapPost("/deadletters/{eventId:guid}/replay", ReplayDeadLetter);
         app.MapGet("/stats", GetStats);
+        app.MapGet("/metrics", GetMetrics);
     }
 
     private static async Task<IResult> RegisterWebhook(
@@ -45,6 +46,7 @@ public static class Endpoints
         IDeduplicationStore dedup,
         IEventQueue queue,
         IConfiguration config,
+        WebhookEngine.Core.Metrics.EngineMetrics metrics,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Payload))
@@ -63,7 +65,10 @@ public static class Endpoints
             var seen = await db.Events.AsNoTracking()
                 .FirstOrDefaultAsync(e => e.IdempotencyKey == key, ct);
             if (seen is not null)
+            {
+                metrics.DedupHit();
                 return Duplicate(seen);
+            }
             // Redis помнит ключ, а в PG строки нет (кеш протёрли / insert не
             // доехал) — пропускаем в insert: индекс разрулит истину.
         }
@@ -73,7 +78,10 @@ public static class Endpoints
         var depth = await db.Events.CountAsync(
             e => e.Status != EventStatus.Delivered && e.Status != EventStatus.DeadLettered, ct);
         if (depth >= threshold)
+        {
+            metrics.Rejected();
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
 
         var now = DateTimeOffset.UtcNow;
         var ev = new NotificationEvent
@@ -94,6 +102,7 @@ public static class Endpoints
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: "23505" })
         {
+            metrics.DedupHit();
             var seen = await db.Events.AsNoTracking()
                 .FirstAsync(e => e.IdempotencyKey == key, ct);
             return Duplicate(seen);
@@ -126,6 +135,7 @@ public static class Endpoints
         var window = TimeSpan.FromHours(config.GetValue("Dedup:WindowHours", 24));
         await dedup.MarkAsync(key, window, ct);
 
+        metrics.Accepted();
         return Results.Accepted(value: new { eventId = ev.Id, status = "accepted" });
     }
 
@@ -179,6 +189,39 @@ public static class Endpoints
         {
             byStatus = byStatus.ToDictionary(x => x.Status.ToString(), x => x.Count),
             liveDeadLetters
+        });
+    }
+
+    private static async Task<IResult> GetMetrics(
+        WebhookEngineDbContext db,
+        WebhookEngine.Core.Metrics.EngineMetrics m,
+        CancellationToken ct)
+    {
+        var depth = await db.Events.CountAsync(
+            e => e.Status != EventStatus.Delivered && e.Status != EventStatus.DeadLettered, ct);
+        var dlqLive = await db.DeadLetters.CountAsync(d => d.ReplayedAt == null, ct);
+        var byStatus = await db.Events.AsNoTracking()
+            .GroupBy(e => e.Status)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key.ToString(), x => x.Count, ct);
+        var delivered = await db.Events.CountAsync(e => e.Status == EventStatus.Delivered, ct);
+        var sent = m.SendsOk + m.SendsRetryable + m.SendsNonRetryable;
+
+        return Results.Ok(new
+        {
+            dedup_hit_ratio = m.DedupHits + m.EventsAccepted > 0
+                ? (double)m.DedupHits / (m.DedupHits + m.EventsAccepted) : 0.0,
+            delivery_retry_rate = sent > 0 ? (double)m.SendsRetryable / sent : 0.0,
+            queue_depth = depth,
+            dlq_live = dlqLive,
+            counters = new
+            {
+                m.EventsAccepted, m.EventsRejected, m.DedupHits,
+                m.SendsOk, m.SendsRetryable, m.SendsNonRetryable,
+                m.LimiterDelays, m.StaleReclaims
+            },
+            byStatus,
+            delivered
         });
     }
 

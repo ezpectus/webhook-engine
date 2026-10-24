@@ -86,6 +86,7 @@ flowchart LR
 | 2026-10-24 | Гонка enqueue (В3) починена атомарным claim'ом `Pending→InFlight` в ingest и sweeper; откат при полном канале | край из guide.md |
 | 2026-10-24 | Лимитер врезан: `TokenBucketRateLimiter` (ConcurrentDictionary, D6/L1) + воркер откладывает по wait через RetryScheduled (D7); сигнатура `AcquireDelayAsync(+permitsPerSecond)` — на ревью | делегировано |
 | 2026-10-24 | TASK-008 `ConsistentHashRing` реализован (делегировано), в систему не врезан — ждёт мульти-инстанс | review |
+| 2026-10-24 | `/metrics`: EngineMetrics-счётчики + DB-derived (depth, dlq_live, ratios); `/health` → readiness PG+Redis; таблица метрик — черновик | TASK-009 частично |
 | 2026-10-17 | Неретраябельное: 4xx (кроме 429), кривой payload, неактивный webhook | правило: «изменится ли ответ от повтора?» нет → не ретрай |
 | 2026-10-17 | DLQ-условия: исчерпаны ретраи / неретраябельная ошибка / невалидный payload post-accept / webhook деактивирован | невалидное на входе — всё ещё 400, не DLQ |
 | 2026-10-17 | Replay идёт в обход dedup (тот же ключ съест фильтр) | status→Pending, история attempts — аудит, не трём |
