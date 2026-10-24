@@ -10,21 +10,22 @@ public sealed class DeliveryWorker(
     IEventQueue queue,
     IServiceProvider services,
     IConfiguration config,
+    IRetryScheduler scheduler,
+    Core.RetryScheduling.BackoffPolicy backoff,
     ILogger<DeliveryWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var retryDelay = TimeSpan.FromSeconds(config.GetValue("Delivery:RetryDelaySeconds", 30));
         var parallelism = config.GetValue("Delivery:WorkerParallelism", 4);
 
         // N параллельных читателей канала: каждый элемент достаётся ровно
         // одному воркеру. Упор внешний HTTP, а не CPU — 4 по дефолту.
         var loops = Enumerable.Range(0, parallelism)
-            .Select(_ => RunLoopAsync(retryDelay, stoppingToken));
+            .Select(_ => RunLoopAsync(stoppingToken));
         await Task.WhenAll(loops);
     }
 
-    private async Task RunLoopAsync(TimeSpan retryDelay, CancellationToken stoppingToken)
+    private async Task RunLoopAsync(CancellationToken stoppingToken)
     {
         await foreach (var ev in queue.ReadAllAsync(stoppingToken))
         {
@@ -37,7 +38,7 @@ public sealed class DeliveryWorker(
 
             try
             {
-                await ProcessAsync(ev, db, sender, feed, limiter, metrics, retryDelay, stoppingToken);
+                await ProcessAsync(ev, db, sender, feed, limiter, metrics, backoff, scheduler, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -54,7 +55,8 @@ public sealed class DeliveryWorker(
         IStatusFeed feed,
         IWebhookRateLimiter limiter,
         WebhookEngine.Core.Metrics.EngineMetrics metrics,
-        TimeSpan retryDelay,
+        Core.RetryScheduling.BackoffPolicy backoff,
+        IRetryScheduler scheduler,
         CancellationToken ct)
     {
         var tracked = await db.Events.FindAsync([ev.Id], ct);
@@ -75,6 +77,7 @@ public sealed class DeliveryWorker(
                 tracked.NextAttemptAt = DateTimeOffset.UtcNow + wait;
                 tracked.UpdatedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync(ct);
+                await scheduler.ScheduleAsync(ev.Id, tracked.NextAttemptAt.Value, ct);
                 return;
             }
         }
@@ -119,12 +122,32 @@ public sealed class DeliveryWorker(
         else
         {
             metrics.SendRetryable();
-            // Placeholder flat delay — настоящий backoff+jitter это TASK-005.
-            tracked.Status = EventStatus.RetryScheduled;
-            tracked.NextAttemptAt = now + retryDelay;
+            if (backoff.IsExhausted(tracked.AttemptCount))
+            {
+                // Ретраи исчерпаны — терминальное состояние, ручной разбор.
+                tracked.Status = EventStatus.DeadLettered;
+                db.DeadLetters.Add(new DeadLetterItem
+                {
+                    EventId = ev.Id,
+                    Reason = $"max attempts ({backoff.MaxAttempts}) exhausted: {result.Error}",
+                    DeadLetteredAt = now
+                });
+            }
+            else
+            {
+                tracked.Status = EventStatus.RetryScheduled;
+                tracked.NextAttemptAt = now + backoff.ComputeDelay(tracked.AttemptCount);
+            }
         }
 
         await db.SaveChangesAsync(ct);
+
+        // Куча — ускоритель поверх PG: сначала durable-запись, потом schedule.
+        // Порядок безопасен: heap-запись без PG — claim не пройдёт и запись
+        // тихо протухнет; PG без heap — sweeper-скан восстановит.
+        if (tracked.Status == EventStatus.RetryScheduled && tracked.NextAttemptAt is { } next)
+            await scheduler.ScheduleAsync(ev.Id, next, ct);
+
         await feed.PublishAsync(ev.Id, tracked.Status.ToString(), ct);
     }
 }

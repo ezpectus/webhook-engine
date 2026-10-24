@@ -9,6 +9,17 @@
 
 ---
 
+## 2026-10-25
+
+### `pending` — TASK-005 retry scheduler (делегировано) [D]
+- `Core/RetryScheduling/BackoffPolicy.cs` — NEW: `min(cap, base·2^a)` + equal jitter, `MaxAttempts`
+- `Core/RetryScheduling/HeapRetryScheduler.cs` — NEW: PriorityQueue + версионный lazy deletion (S1)
+- `DeliveryWorker.cs` — backoff вместо flat-delay; max-attempts → DLQ; schedule в кучу после SaveChanges
+- `SweeperService.cs` — heap fast-path `ReadDueAsync` + PG-скан (истина); claim вынесен в `ClaimAndEnqueueAsync`
+- `DependencyInjection.cs`, `appsettings.json` (секция `Retry`)
+- `RetrySchedulerTests.cs` — 8 кейсов; 40/40
+- Таски: TASK-005 → review; вопрос S1 закрыт
+
 ## 2026-10-24
 
 ### `8d6b34d` — HMAC подпись + receiver в compose [D]

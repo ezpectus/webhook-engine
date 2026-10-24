@@ -198,9 +198,16 @@ OOM. Bounded `Channel` + честная политика переполнени�
 
 ## TASK-005 · Retry scheduler: min-heap + backoff/jitter
 
-**Стадия:** 5 · **Зона:** ядро · **Режим:** ✋ **руками — Devin только менторит** ·
-**Размер:** L ·
-**Зависит от:** TASK-003, P-04 · **Статус:** `todo`
+**Стадия:** 5 · **Зона:** ядро · **Размер:** L ·
+**Зависит от:** TASK-003, P-04 · **Статус:** `review`
+
+*Режим изменён юзером (2026-10-25): делегировано Devin полностью,
+юзер ревьюит и защищает решения. Сделано: `BackoffPolicy` (base·2^a,
+cap, equal jitter — D9) + `HeapRetryScheduler` (версионный lazy
+deletion — S1: дубли не страшны, PG разрулит). Врезка: воркер считает
+`ComputeDelay` вместо flat-delay и ставит в кучу после SaveChanges;
+`AttemptCount ≥ MaxAttempts` → DLQ; sweeper: heap fast-path → PG-скан
+(истина, покрывает рестарт). 8 тестов, 40/40.*
 
 **Контекст.** Упавший endpoint нельзя долбить сразу. Отложенные ретраи:
 exp backoff, jitter против thundering herd, потолок → DLQ.

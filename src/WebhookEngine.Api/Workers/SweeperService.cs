@@ -13,6 +13,7 @@ namespace WebhookEngine.Api.Workers;
 public sealed class SweeperService(
     IServiceProvider services,
     IEventQueue queue,
+    IRetryScheduler scheduler,
     IConfiguration config,
     ILogger<SweeperService> logger) : BackgroundService
 {
@@ -56,6 +57,13 @@ public sealed class SweeperService(
             logger.LogWarning("Reclaimed {Count} stale in-flight events", stale);
         }
 
+        // Fast path: куча в памяти уже знает due-элементы (TASK-005).
+        // Каждый claim всё равно атомарный через PG — куча лишь подсказка.
+        await foreach (var id in scheduler.ReadDueAsync(now, ct))
+            await ClaimAndEnqueueAsync(db, id, now, ct);
+
+        // Slow path (истина): скан PG — покрывает рестарт и всё, что куча
+        // потеряла. Атомарный claim разруливает пересечения с fast path.
         var due = await db.Events
             .Where(e => (e.Status == EventStatus.Pending || e.Status == EventStatus.RetryScheduled)
                         && (e.NextAttemptAt == null || e.NextAttemptAt <= now))
@@ -64,29 +72,34 @@ public sealed class SweeperService(
             .ToListAsync(ct);
 
         foreach (var e in due)
-        {
-            // Атомарный claim: enqueue делает только тот, кто перевёл статус.
-            var claimed = await db.Events
-                .Where(x => x.Id == e.Id &&
-                            (x.Status == EventStatus.Pending || x.Status == EventStatus.RetryScheduled))
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(x => x.Status, EventStatus.InFlight)
-                    .SetProperty(x => x.UpdatedAt, now), ct);
-            if (claimed == 0)
-                continue; // кто-то другой уже забрал (ingest-claim или конкурент)
+            if (!await ClaimAndEnqueueAsync(db, e.Id, now, ct))
+                break; // канал полон — следующий обход доберёт
+    }
 
-            if (!queue.TryEnqueue(e))
-            {
-                // Канал полон — откат в Pending, следующий обход доберёт.
-                await db.Events
-                    .Where(x => x.Id == e.Id && x.Status == EventStatus.InFlight)
-                    .ExecuteUpdateAsync(s => s
-                        .SetProperty(x => x.Status, EventStatus.Pending)
-                        .SetProperty(x => x.UpdatedAt, now), ct);
-                break;
-            }
-            e.Status = EventStatus.InFlight;
-            e.UpdatedAt = now;
+    private async Task<bool> ClaimAndEnqueueAsync(
+        WebhookEngineDbContext db, Guid eventId, DateTimeOffset now, CancellationToken ct)
+    {
+        // Атомарный claim: enqueue делает только тот, кто перевёл статус.
+        var claimed = await db.Events
+            .Where(x => x.Id == eventId &&
+                        (x.Status == EventStatus.Pending || x.Status == EventStatus.RetryScheduled))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, EventStatus.InFlight)
+                .SetProperty(x => x.UpdatedAt, now), ct);
+        if (claimed == 0)
+            return true; // кто-то другой уже забрал — не ошибка
+
+        var ev = await db.Events.AsNoTracking().FirstAsync(x => x.Id == eventId, ct);
+        if (!queue.TryEnqueue(ev))
+        {
+            // Канал полон — откат в Pending, следующий обход доберёт.
+            await db.Events
+                .Where(x => x.Id == eventId && x.Status == EventStatus.InFlight)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, EventStatus.Pending)
+                    .SetProperty(x => x.UpdatedAt, now), ct);
+            return false;
         }
+        return true;
     }
 }
