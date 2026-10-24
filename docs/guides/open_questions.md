@@ -7,13 +7,13 @@
 
 - ~~**В3**~~ ✓ закрыт кодом: атомарный claim `Pending→InFlight` в ingest
   и sweeper (`0829b37`); двойной enqueue исключён
-- **В2** — `Endpoints.cs:70-73`: почему `depth` считает Pending +
-  InFlight + RetryScheduled вместе, а не только Pending?
-- **В4** — `EventQueue`: `TryEnqueue` вернул `false` при полном канале.
-  Почему это не потеря сообщения? Кто подстраховывает?
-- **В5** — воркер ставит `RetryScheduled` + `NextAttemptAt` и молчит.
-  Кто и через какой запрос достаёт его, когда время придёт?
-  (место в `SweeperService`)
+- **В2** ~ частично (2026-10-25): юзер — «не один класс статуса».
+  Добивка: все три = недоставленная работа; потолок только на
+  Pending слеп к наводнению RetryScheduled
+- **В4** ✓ (2026-10-25): страхует `SweeperService` — событие остаётся
+  `Pending` в PG, канал лишь ускоритель
+- **В5** ~ подсказкой (2026-10-25): оба пути в `SweeperService` —
+  heap `ReadDueAsync` + PG-скан `NextAttemptAt <= now`
 - **В7** — медленный канал (>5 мин backlog): InFlight с протухшим
   lease → sweeper реклеймит → второй enqueue → два воркера шлют
   параллельно. Дубль легален по at-least-once — но посчитай: что
