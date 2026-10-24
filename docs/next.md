@@ -29,7 +29,10 @@
 7. **Redis rate limiter** — in-memory ломается при 2+ инстансах (D6/L1).
 8. **Leader-election sweeper'а** — два sweeper'а будут драться за due;
    клейм через PG/Redis.
-9. **ConsistentHashRing врезка** — готов и оттестирован, ждёт повода.
+9. **`db.Database.Migrate()` на старте** — два инстанса могут гонять
+   миграцию одновременно (EF Migrate не concurrency-safe). Варианты:
+   миграция как отдельный job/step в CI, или advisory lock в PG.
+10. **ConsistentHashRing врезка** — готов и оттестирован, ждёт повода.
 
 ## Портфолио-финал
 
