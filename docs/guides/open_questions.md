@@ -24,6 +24,10 @@
 - **L1** — обёртка `IWebhookRateLimiter`: `ConcurrentDictionary<Guid,
   TokenBucket>` per-webhook в памяти — ок для MVP? Что меняется при
   втором инстансе API?
+- **L3** — `GetOrAdd` создаёт bucket один раз: если у вебхука потом
+  поменять `RateLimitPerSecond`, лимитер живёт на старом rate до
+  рестарта. MVP-компромисс или чинить (пересоздавать bucket при
+  смене rate — а что тогда с токенами)?
 - **L2** — в `TokenBucket`: стартуем полным или пустым ведром —
   обоснуй свой выбор в коде комментом.
 - **S1** — scheduler: дубль eventId в куче — терпим (PG разрулит)
