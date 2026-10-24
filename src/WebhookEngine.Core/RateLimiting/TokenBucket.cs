@@ -1,3 +1,77 @@
+namespace WebhookEngine.Core.RateLimiting;
+
+/// <summary>
+/// Token bucket rate limiter. Tokens accrue up to <c>capacity</c>
+/// at a constant rate; each send spends one.
+/// Reference implementation (TASK-004 — user version preserved above).
+/// </summary>
+public sealed class TokenBucket
+{
+    private const double Epsilon = 1e-9; // допуск на дрейф double на границе токена
+
+    private readonly double _capacity;
+    private readonly double _refillPerSecond;
+    private readonly TimeProvider _time;
+    private readonly object _gate = new();
+    private double _tokens;
+    private DateTimeOffset _lastRefill;
+
+    public TokenBucket(double capacity, double refillPerSecond, TimeProvider? time = null)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(refillPerSecond);
+
+        _capacity = capacity;
+        _refillPerSecond = refillPerSecond;
+        _time = time ?? TimeProvider.System;
+
+        _tokens = capacity;   // стартуем полным — свежее ведро даёт один всплеск
+        _lastRefill = _time.GetUtcNow();
+    }
+
+    /// <summary>Attempts to spend one token; true if a send may proceed now.</summary>
+    public bool TryTake()
+    {
+        lock (_gate)
+        {
+            Refill();
+            if (_tokens >= 1 - Epsilon)
+            {
+                _tokens = Math.Max(0, _tokens - 1); // клэмп: микродрейф не уводит в минус
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>Time until the next token is available; Zero if one is ready.</summary>
+    public TimeSpan TimeUntilAvailable()
+    {
+        lock (_gate)
+        {
+            Refill();
+            return _tokens >= 1 - Epsilon
+                ? TimeSpan.Zero
+                : TimeSpan.FromSeconds((1 - _tokens) / _refillPerSecond);
+        }
+    }
+
+    // Ленивое пополнение: досчитываем только при обращении — без таймера.
+    private void Refill()
+    {
+        var now = _time.GetUtcNow();
+        var elapsed = now - _lastRefill;
+        if (elapsed <= TimeSpan.Zero) return;   // один тик или часы пошли назад
+
+        _tokens = Math.Min(_capacity, _tokens + elapsed.TotalSeconds * _refillPerSecond);
+        _lastRefill = now;
+    }
+}
+
+
+
+
+
 /*
  * ── Версия юзера (TASK-004, hands-on) — сохранена для сравнения ──
  *
@@ -75,72 +149,4 @@ public sealed class TokenBucketUserVersion
 }
 */
 
-namespace WebhookEngine.Core.RateLimiting;
 
-/// <summary>
-/// Token bucket rate limiter. Tokens accrue up to <c>capacity</c>
-/// at a constant rate; each send spends one.
-/// Reference implementation (TASK-004 — user version preserved above).
-/// </summary>
-public sealed class TokenBucket
-{
-    private const double Epsilon = 1e-9; // допуск на дрейф double на границе токена
-
-    private readonly double _capacity;
-    private readonly double _refillPerSecond;
-    private readonly TimeProvider _time;
-    private readonly object _gate = new();
-    private double _tokens;
-    private DateTimeOffset _lastRefill;
-
-    public TokenBucket(double capacity, double refillPerSecond, TimeProvider? time = null)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(refillPerSecond);
-
-        _capacity = capacity;
-        _refillPerSecond = refillPerSecond;
-        _time = time ?? TimeProvider.System;
-
-        _tokens = capacity;   // стартуем полным — свежее ведро даёт один всплеск
-        _lastRefill = _time.GetUtcNow();
-    }
-
-    /// <summary>Attempts to spend one token; true if a send may proceed now.</summary>
-    public bool TryTake()
-    {
-        lock (_gate)
-        {
-            Refill();
-            if (_tokens >= 1 - Epsilon)
-            {
-                _tokens = Math.Max(0, _tokens - 1); // клэмп: микродрейф не уводит в минус
-                return true;
-            }
-            return false;
-        }
-    }
-
-    /// <summary>Time until the next token is available; Zero if one is ready.</summary>
-    public TimeSpan TimeUntilAvailable()
-    {
-        lock (_gate)
-        {
-            Refill();
-            return _tokens >= 1 - Epsilon
-                ? TimeSpan.Zero
-                : TimeSpan.FromSeconds((1 - _tokens) / _refillPerSecond);
-        }
-    }
-
-    // Ленивое пополнение: досчитываем только при обращении — без таймера.
-    private void Refill()
-    {
-        var now = _time.GetUtcNow();
-        var elapsed = now - _lastRefill;
-        if (elapsed <= TimeSpan.Zero) return;   // один тик или часы пошли назад
-
-        _tokens = Math.Min(_capacity, _tokens + elapsed.TotalSeconds * _refillPerSecond);
-        _lastRefill = now;
-    }
-}

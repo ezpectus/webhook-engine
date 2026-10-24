@@ -61,11 +61,28 @@ public sealed class SweeperService(
 
         foreach (var e in due)
         {
+            // Атомарный claim: enqueue делает только тот, кто перевёл статус.
+            var claimed = await db.Events
+                .Where(x => x.Id == e.Id &&
+                            (x.Status == EventStatus.Pending || x.Status == EventStatus.RetryScheduled))
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Status, EventStatus.InFlight)
+                    .SetProperty(x => x.UpdatedAt, now), ct);
+            if (claimed == 0)
+                continue; // кто-то другой уже забрал (ingest-claim или конкурент)
+
             if (!queue.TryEnqueue(e))
+            {
+                // Канал полон — откат в Pending, следующий обход доберёт.
+                await db.Events
+                    .Where(x => x.Id == e.Id && x.Status == EventStatus.InFlight)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(x => x.Status, EventStatus.Pending)
+                        .SetProperty(x => x.UpdatedAt, now), ct);
                 break;
+            }
             e.Status = EventStatus.InFlight;
             e.UpdatedAt = now;
         }
-        await db.SaveChangesAsync(ct);
     }
 }

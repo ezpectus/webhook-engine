@@ -22,10 +22,11 @@ public sealed class DeliveryWorker(
             var db = scope.ServiceProvider.GetRequiredService<WebhookEngineDbContext>();
             var sender = scope.ServiceProvider.GetRequiredService<WebhookSender>();
             var feed = scope.ServiceProvider.GetRequiredService<IStatusFeed>();
+            var limiter = scope.ServiceProvider.GetRequiredService<IWebhookRateLimiter>();
 
             try
             {
-                await ProcessAsync(ev, db, sender, feed, retryDelay, stoppingToken);
+                await ProcessAsync(ev, db, sender, feed, limiter, retryDelay, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -40,6 +41,7 @@ public sealed class DeliveryWorker(
         WebhookEngineDbContext db,
         WebhookSender sender,
         IStatusFeed feed,
+        IWebhookRateLimiter limiter,
         TimeSpan retryDelay,
         CancellationToken ct)
     {
@@ -48,6 +50,21 @@ public sealed class DeliveryWorker(
             return;
 
         var webhook = await db.Webhooks.FindAsync([ev.WebhookId], ct);
+
+        // D7: задержка по rate limit — тот же механизм отложенной отправки,
+        // что и ретрай. Это НЕ попытка: AttemptCount не трогаем, попытку не пишем.
+        if (webhook is not null && webhook.IsActive)
+        {
+            var wait = await limiter.AcquireDelayAsync(webhook.Id, webhook.RateLimitPerSecond, ct);
+            if (wait > TimeSpan.Zero)
+            {
+                tracked.Status = EventStatus.RetryScheduled;
+                tracked.NextAttemptAt = DateTimeOffset.UtcNow + wait;
+                tracked.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+                return;
+            }
+        }
 
         var sw = Stopwatch.StartNew();
         var result = webhook is null || !webhook.IsActive

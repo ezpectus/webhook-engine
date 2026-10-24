@@ -99,11 +99,28 @@ public static class Endpoints
             return Duplicate(seen);
         }
 
-        // Быстрый путь: попал в канал → InFlight; полон → остаётся Pending для sweeper'а.
-        if (queue.TryEnqueue(ev))
+        // Быстрый путь. Атомарный claim Pending→InFlight: у кого сработал
+        // UPDATE — тот и enqueue'ит. Sweeper, успевший перехватить событие,
+        // не может создать двойной enqueue (гонка В3).
+        var claimed = await db.Events
+            .Where(e => e.Id == ev.Id && e.Status == EventStatus.Pending)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(e => e.Status, EventStatus.InFlight)
+                .SetProperty(e => e.UpdatedAt, now), ct);
+
+        if (claimed == 1 && !queue.TryEnqueue(ev))
+        {
+            // Канал полон — возвращаем в Pending, доберёт sweeper.
+            await db.Events
+                .Where(e => e.Id == ev.Id && e.Status == EventStatus.InFlight)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(e => e.Status, EventStatus.Pending)
+                    .SetProperty(e => e.UpdatedAt, now), ct);
+            ev.Status = EventStatus.Pending;
+        }
+        else if (claimed == 1)
         {
             ev.Status = EventStatus.InFlight;
-            await db.SaveChangesAsync(ct);
         }
 
         var window = TimeSpan.FromHours(config.GetValue("Dedup:WindowHours", 24));

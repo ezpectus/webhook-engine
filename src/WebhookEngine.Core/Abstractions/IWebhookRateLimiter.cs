@@ -7,6 +7,8 @@ public interface IWebhookRateLimiter
 {
     /// <summary>
     /// Сколько ждать до разрешённой отправки. TimeSpan.Zero — можно слать сейчас.
+    /// permitsPerSecond — лимит webhook'а (из WebhookEndpoint.RateLimitPerSecond).
     /// </summary>
-    Task<TimeSpan> AcquireDelayAsync(Guid webhookId, CancellationToken ct = default);
+    Task<TimeSpan> AcquireDelayAsync(Guid webhookId, double permitsPerSecond,
+        CancellationToken ct = default);
 }
