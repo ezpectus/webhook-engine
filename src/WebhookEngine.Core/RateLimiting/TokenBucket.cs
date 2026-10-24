@@ -1,14 +1,12 @@
 namespace WebhookEngine.Core.RateLimiting;
 
 /// <summary>
-/// TASK-004 — пишется руками (см. AGENTS.md, docs/guides/task_guide.md).
-/// Token bucket: токены копятся до Capacity и пополняются
-/// со скоростью RefillPerSecond.
+/// Token bucket rate limiter. Tokens accrue up to <see cref="Capacity"/>
+/// at a constant rate; each send spends one.
+/// TASK-004 — hands-on (see docs/guides/task004_walkthrough.md).
 /// </summary>
 public sealed class TokenBucket
 {
-    // Поля уже объявлены — твоя работа ниже.
-
     private readonly double _capacity;
     private readonly double _refillPerSecond;
     private readonly TimeProvider _time;
@@ -21,21 +19,16 @@ public sealed class TokenBucket
         _capacity = capacity;
         _refillPerSecond = refillPerSecond;
         _time = time ?? TimeProvider.System;
-        // TODO(ты): решить и написать — чему равны _tokens и _lastRefill
-        // при создании? Стартуем полным ведром или пустым — и почему?
-        // TODO(ты): валидация аргументов — что делать при <= 0?
+        // TODO: initial state (full or empty?) + argument validation.
+        // See walkthrough — Step 1.
     }
 
-    /// <summary>Взять токен. true — токен был, можно слать сейчас.</summary>
-    /// <remarks>Шаги: пополнить по прошедшему времени → проверить
-    /// tokens >= 1 → забрать или вернуть false.</remarks>
+    /// <summary>Attempts to spend one token; true if a send may proceed now.</summary>
     public bool TryTake() => throw new NotImplementedException();
 
-    /// <summary>Сколько ждать до ближайшего доступного токена.
-    /// Zero — токен есть.</summary>
+    /// <summary>Time until the next token is available; Zero if one is ready.</summary>
     public TimeSpan TimeUntilAvailable() => throw new NotImplementedException();
 
-    // TODO(ты): ленивое пополнение — одна формула из task_guide.
-    // TODO(ты): несколько воркеров дёргают один bucket — что защищает
-    // _tokens от ухода в минус?
+    // TODO: private Refill() — lazy top-up, called first inside both public methods.
+    // TODO: lock object for concurrent callers (walkthrough — Step 5).
 }
