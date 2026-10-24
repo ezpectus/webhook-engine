@@ -15,7 +15,17 @@ public sealed class DeliveryWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var retryDelay = TimeSpan.FromSeconds(config.GetValue("Delivery:RetryDelaySeconds", 30));
+        var parallelism = config.GetValue("Delivery:WorkerParallelism", 4);
 
+        // N параллельных читателей канала: каждый элемент достаётся ровно
+        // одному воркеру. Упор внешний HTTP, а не CPU — 4 по дефолту.
+        var loops = Enumerable.Range(0, parallelism)
+            .Select(_ => RunLoopAsync(retryDelay, stoppingToken));
+        await Task.WhenAll(loops);
+    }
+
+    private async Task RunLoopAsync(TimeSpan retryDelay, CancellationToken stoppingToken)
+    {
         await foreach (var ev in queue.ReadAllAsync(stoppingToken))
         {
             using var scope = services.CreateScope();
