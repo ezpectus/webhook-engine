@@ -25,7 +25,10 @@ public sealed class TokenBucket
         _refillPerSecond = refillPerSecond;
         _time = time ?? TimeProvider.System;
 
-        _tokens = capacity;   // стартуем полным — свежее ведро даёт один всплеск
+        // Старт полным: новый webhook сразу получает бюджет на всплеск —
+        // «подключил → пошли события» не ждёт накопления токенов.
+        // Пустое ведро задержало бы первые N событий без выигрыша.
+        _tokens = capacity;
         _lastRefill = _time.GetUtcNow();
     }
 

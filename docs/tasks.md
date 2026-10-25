@@ -196,78 +196,10 @@ OOM. Bounded `Channel` + честная политика переполнени�
 
 ---
 
-## TASK-005 · Retry scheduler: min-heap + backoff/jitter
+## TASK-005 · Retry scheduler: min-heap + backoff/jitter — `done`
 
-**Стадия:** 5 · **Зона:** ядро · **Размер:** L ·
-**Зависит от:** TASK-003, P-04 · **Статус:** `review`
-
-*Режим изменён юзером (2026-10-25): делегировано Devin полностью,
-юзер ревьюит и защищает решения. Сделано: `BackoffPolicy` (base·2^a,
-cap, equal jitter — D9) + `HeapRetryScheduler` (версионный lazy
-deletion — S1: дубли не страшны, PG разрулит). Врезка: воркер считает
-`ComputeDelay` вместо flat-delay и ставит в кучу после SaveChanges;
-`AttemptCount ≥ MaxAttempts` → DLQ; sweeper: heap fast-path → PG-скан
-(истина, покрывает рестарт). 8 тестов, 40/40.*
-
-**Контекст.** Упавший endpoint нельзя долбить сразу. Отложенные ретраи:
-exp backoff, jitter против thundering herd, потолок → DLQ.
-
-**Решения принять до кода:**
-- Heap в памяти vs скан `NextAttemptAt` по таблице — что происходит
-  с отложенными ретраями при рестарте процесса? (in-memory heap
-  теряется → чем добираем?)
-- Формула: `base * 2^attempt`, cap, max attempts; jitter —
-  full/equal-jitter, какой диапазон
-- Какие ошибки ретраим, какие — сразу DLQ (5xx? timeout? 4xx?)
-- Где живёт тикер, достающий due-элементы (BackgroundService,
-  интервал опроса)
-
-**Контракт/место:** реализовать `IRetryScheduler`
-(`Core/Abstractions/IRetryScheduler.cs`) + `PriorityQueue<T,DateTimeOffset>`
-(есть в BCL) или своя куча — на твой выбор, обосновать.
-
-**Acceptance criteria:**
-- [ ] Ближайший due — O(log n)
-- [ ] Jitter размазывает ретраи (показать замером/тестом)
-- [ ] После max attempts → DLQ, событие не теряется
-- [ ] Рестарт процесса не теряет отложенные ретраи
-
-**Проверка:** endpoint, который всегда 500 → событие уходит на ретраи
-с растущими интервалами → в DLQ; логи интервалов показывают backoff+jitter.
-
-**Вопросы на понимание:** почему без jitter все ретраи одной пачки сходятся
-в одну секунду? Чем отличается «воркер умер до ack» от «воркер умер
-после ack» для этого компонента?
-
-### Путь реализации (подсказки, не код)
-
-Класс живёт в `Core` (чистый алгоритм, тесты без Docker), реализует
-`IRetryScheduler`. Заменяет плоскую заглушку `RetryDelaySeconds` в
-`DeliveryWorker`.
-
-1. **Две части, не одна:**
-   a) `ComputeDelay(attempt)` — чистая функция: `min(cap, base * 2^attempt)`
-      + jitter. Параметры (D9): base 1с, cap 5мин, max 5 попыток.
-      Jitter — свой выбор: full (`rand(delay)`) или equal
-      (`delay/2 + rand(delay/2)`) — зафиксируй в PLAN.md почему.
-   b) Heap: `PriorityQueue<Guid, DateTimeOffset>` — due-time как приоритет.
-      `Enqueue(eventId, dueAt)`, `Peek`/`Dequeue` ближайшего.
-2. **Heap — ускоритель, PG — истина.** Рестарт теряет кучу → sweeper уже
-   умеет сканить `NextAttemptAt`, это покрывает восстановление. Пойми:
-   куча только делает due-извлечение быстрым, не является хранилищем.
-3. **Cancel/reschedule:** `PriorityQueue` не умеет Remove — варианты:
-   «ленивое удаление» (при доставке due-элемента сверять с актуальным
-   `NextAttemptAt` в PG) или версионные записи. Выбери и обоснуй.
-4. **Время — снова снаружи** (`TimeProvider`), как в TASK-004.
-5. **Конкурентность:** воркеров может быть несколько — подумай про lock.
-6. Врезка: воркер вместо `now + retryDelay` зовёт scheduler →
-   `NextAttemptAt = now + ComputeDelay(attempt)`; sweeper достаёт due
-   из кучи (или скана) → `InFlight` → канал.
-
-**Баги, которые поймаю на ревью:** backoff без cap улетает в часы;
-jitter у всех событий одинаковый (seed!); событие выкинуто из кучи,
-но в PG осталось `RetryScheduled` — или наоборот; max-attempts проверка
-после записи в DLQ вместо до ретрая.
+Делегировано Devin (BackoffPolicy + HeapRetryScheduler + врезка),
+защищено юзером голосом (S1–S5, 2026-10-25). Детали — `docs/done-log.md`.
 
 ---
 
