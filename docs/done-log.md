@@ -21,4 +21,25 @@
 | **P-11** Параллельные воркеры | `Delivery:WorkerParallelism` (4): N читателей канала | `47df4b5` | done |
 | **TASK-002** Dedup приём | insert-first, `23505`→duplicate, fail-open Redis | `c781b8c` | `review` — чекпоинты частично |
 | **TASK-003** Очередь | bounded channel + потолок (D3) + sweeper/lease; гонка В3 починена | `9da2bec` `0829b37` | `review` |
+| **TASK-007** Хаос-прогон | 9 сбоев воспроизведены живьём на compose-стеке, результаты ниже в таблице. Все гарантии держались; найдено 2 реальные границы: тик ретрая = тик sweeper'а; dedup-окно фактически бессрочно (unique PG навсегда — см. D-вопрос) | `—` | `review` — ждёт разбора юзером |
 | **P-12** Живой прогон | PG+Redis+MockReceiver в compose, API локально :5269. **Результаты:** 3000 отправлено (rps 50, dup 30%) → 2055 accepted, 946 dedup-хитов, 0 err; **PG: 2055 событий = 2055 попыток = ровно 1 каждая, 0 мульти-attempt** — дубли доставки = 0. mode=500: 5 ретраев → DLQ `max attempts (5) exhausted` ✓; ретраи каденсированы тиком sweeper (~10с — backoff<10с сливается, зафиксировано как граница). flap: [500→200] восстановился ✓. Replay: AttemptCount→0, история сохранена, цикл пошёл заново ✓ | `—` | done |
+
+## TASK-007 · Хаос-прогон 2026-10-25 — таблица сбоев и фактов
+
+| # | Сбой | Как ломали | Факт | Гарантия | Вердикт |
+|---|------|-----------|------|----------|---------|
+| 1 | PG мёртв при ingest | `docker stop postgres` → POST /events | HTTP 500 (не ложное 202); после старта всё работает | не потерять молча | ✅ потеря недопустима → фейлим честно |
+| 2 | Redis мёртв при dedup | `docker stop redis` → POST ×2 одинаковых | 1-й accepted, 2-й duplicate (same eventId) — PG unique ловит без Redis | идемпотентность | ✅ dedup держится без Redis |
+| 3 | Рестарт API с ретраями в куче | kill `dotnet run` при RetryScheduled | ретраи продолжились после рестарта (attempts 2,3 нового процесса) — PG-скан sweeper'а | heap ≠ истина | ✅ потеря недопустима → PG спасает |
+| 4 | Канал переполнен | `Queue__Capacity=1`, 3 POST'а | все 3 Delivered — 2 прошли через sweeper | канал = ускоритель | ✅ backpressure без потерь |
+| 5 | Endpoint всегда 500 | `?mode=500` | 5 попыток с backoff → DLQ «max attempts (5) exhausted» | потолок ретраев | ✅ |
+| 6 | Endpoint флапает | `?mode=flap` | attempts [500, 200] → Delivered | ретрай лечит транзиенты | ✅ |
+| 7 | Lease протухает посреди send | `InFlightTimeoutMinutes=0` + `?mode=slow` | **2 строки attempt#1 за 6с** — параллельный дубль-отправка; attemptCount=2 на 3 реальных send'а (last-write-wins) | В7 — легальная граница at-least-once | ⚠️ дубль допустим, счётчик грязный |
+| 8 | Replay из DLQ | `POST /deadletters/{id}/replay` | AttemptCount→0, 5 старых attempts в аудите, цикл пошёл заново | replay = новый бюджет | ✅ |
+| 9 | Дубль после окна dedup | `Dedup__WindowHours=0`, POST ×2 | всё равно duplicate — **unique-индекс бессрочен**, TTL чистит только Redis-кэш | окно ≠ горизонт | ⚠️ семантика на ревью (D) |
+
+**Выводы:**
+- Потерь нигде не было — все сбои деградировали в «честный отказ» или «восстановление из PG».
+- В7 воспроизведён: дубль-отправка реальна при протухшем lease — легально по at-least-once, но `AttemptCount` занижается (last-write-wins). Решение: принять границу или lease-version — вопрос В7 в open_questions.
+- Dedup-горизонт = ∞: unique `IdempotencyKey` в PG не имеет TTL; `Dedup:WindowHours` влияет только на Redis-кэш. Если нужно окно по времени — ключ должен содержать бакет времени, иначе дубль = навсегда. Новый вопрос в open_questions.
+- Каденс ретраев = max(backoff, Sweeper.IntervalSeconds=10с) — backoff<10с сливается в тик.

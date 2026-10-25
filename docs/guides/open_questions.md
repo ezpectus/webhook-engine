@@ -74,6 +74,19 @@
   повышает версию, старые записи кучи пропускаются на dequeue; PG
   остаётся истиной — рестарт восстанавливает сканом
 
+## Найдено в хаос-прогоне 2026-10-25 (факты из done-log таблицы)
+
+- **В8** — dedup-окно фактически бессрочно: `Dedup:WindowHours=0` всё
+  равно вернул `duplicate` — unique-индекс `IdempotencyKey` в PG не
+  имеет TTL, Redis TTL чистит только кэш. Ок или нужен настоящий
+  горизонт? (тогда ключ = hash + бакет времени) · `Endpoints.cs →
+  IngestEvent` + `RedisDeduplicationStore.cs`
+- **В7-подтверждение** — воспроизведён живьём: `InFlightTimeoutMinutes=0`
+  + slow endpoint → две строки attempt#1 в `DeliveryAttempts`,
+  `AttemptCount=2` на 3 реальных send'а (last-write-wins). Принять
+  как границу или чинить lease-version? · `DeliveryWorker.cs` +
+  `SweeperService.cs`
+
 ## Тренажёр (без единственно верного ответа)
 
 - **T1** ✓ разобрано (дубль приёма vs отправки; ack после send)
