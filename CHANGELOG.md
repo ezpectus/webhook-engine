@@ -11,6 +11,23 @@
 
 ## 2026-10-25
 
+### `b634b09` — TASK-010: EXPLAIN на живых данных [docs]
+- 4806 строк: due/stale-scan по `IX_Events_Status_NextAttemptAt`;
+  L4 закрыт — полный индекс держим; `/stats` seq-scan → scale-волна
+- `PLAN.md` журнал ×4, `open_questions` L4✓, `tasks.md`, `done-log`
+
+### `a923cbd` — TASK-007 хаос-прогон: 9 сбоев живьём [docs]
+- `done-log.md` — таблица «сбой → факт → вердикт»: PG-down=честный 500;
+  Redis-down=PG unique ловит; рестарт=PG-скан спасает; cap=1=sweeper;
+  В7 воспроизведён (2 строки attempt#1); dedup-окно бессрочно (В8)
+- `open_questions` +В8, В7-подтверждение; `tasks.md` → review
+
+### `12cd3ab` — P-12 живой прогон + фиксы [D+docs]
+- LoadGen 3000@50rps dup30% → 2055/946/0err; PG: 1 attempt на событие
+- `docker-compose.yml` pg→5433 (конфликт с нативным postgres);
+  `appsettings.Development.json`; LoadGen `InvariantCulture` для --dup
+- `tasks.md`: TASK-007/010 расписаны, P-03/P-12 обновлены
+
 ### `c4f26e6` — карта классов [docs]
 - `docs/diagrams/mmd/classes.mmd` + `io/classes.drawio` — классы по слоям
 
