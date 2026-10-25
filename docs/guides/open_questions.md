@@ -51,12 +51,10 @@
   поменять `RateLimitPerSecond`, лимитер живёт на старом rate до
   рестарта. MVP-компромисс или чинить (пересоздавать bucket при
   смене rate — а что тогда с токенами)? · `TokenBucketRateLimiter.cs`
-- **L4** — индексы БД: `(Status, NextAttemptAt)` → partial на
-  две живые статусы? Но stale-scan `Status=InFlight` тогда сядет на
-  seq scan. Разбор в PLAN.md → реши после `EXPLAIN` на реальных
-  данных. Плюс трюк: `NextAttemptAt = CreatedAt` при insert убирает
-  NULL и делает due-scan чистым range-запросом · `WebhookEngineDbContext.cs`
-  + `docs/diagrams/schema.sql`
+- ~~**L4**~~ ✓ решено данными (2026-10-25, TASK-010): `EXPLAIN
+  ANALYZE` на 4806 строк — оба скана едут по индексу; partial ломал
+  бы stale-scan, выигрыш ничтожен (80кБ). Полный держим. Детали —
+  журнал PLAN.md
 
 ## Защита TASK-005 (делегировано — ревью юзера)
 

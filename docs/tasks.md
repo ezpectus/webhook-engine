@@ -451,63 +451,15 @@ accepted/duplicate/err показывают dedup живьём. Проверка
 `X-Webhook-Signature: sha256=<hex>` по `WebhookEndpoint.Secret` (D14);
 MockReceiver логирует подпись. Ждёт живой проверки получателем.
 
-### TASK-010 · Индексы БД на живых данных · `todo`
-**Зона:** ядро (решения) / платформа (миграция) · **Размер:** S ·
-**Зависит от:** P-12 (нужны живые данные в таблице).
-
-**Контекст.** Индексы не угадывают — их меряют. Сейчас у нас полный
-B-tree `(Status, NextAttemptAt)` и решения принимались теоретически.
-После прогона LoadGen в таблице появятся тысячи строк — самое время
-посмотреть, что реально делает planner. Это и есть «оптимизация БД»
-по-взрослому: не «на всякий случай», а `EXPLAIN ANALYZE` → решение.
-
-**Что сделать (твоя часть — читать планы и решать):**
-
-1. **Нагенерить данные:** LoadGen `--rps 50 --seconds 120 --dup 0.3` +
-   MockReceiver `mode=flap` — чтобы в `Events` была смесь Delivered,
-   DeadLettered, RetryScheduled (иначе индекс проверять не на чем).
-
-2. **Прогнать планы** (`docker exec -it <pg> psql -U engine webhook_engine`):
-
-   ```sql
-   -- due-scan sweeper'а (главный горячий запрос):
-   EXPLAIN ANALYZE SELECT * FROM "Events"
-   WHERE "Status" IN (0, 2) AND "NextAttemptAt" <= now() LIMIT 500;
-
-   -- stale-scan (InFlight с протухшим lease):
-   EXPLAIN ANALYZE SELECT * FROM "Events"
-   WHERE "Status" = 1 AND "UpdatedAt" < now() - interval '5 minutes';
-
-   -- dedup/fallback по IdempotencyKey:
-   EXPLAIN ANALYZE SELECT * FROM "Events" WHERE "IdempotencyKey" = 'x';
-
-   -- /stats (полный count по статусам):
-   EXPLAIN ANALYZE SELECT "Status", count(*) FROM "Events" GROUP BY 1;
-   ```
-
-3. **Решения на выходе** (записать в PLAN.md):
-   - **L4:** due-scan использует `(Status, NextAttemptAt)` — Index Scan
-     или Bitmap? Стоит ли менять на partial
-     `WHERE "Status" IN (0,2)` — сравнить размер индекса
-     (`pg_relation_size`). Помни: partial не покрывает stale-scan
-     (status=1) — он свалится в seq scan. Компромисс приемлем?
-   - **NULL в NextAttemptAt:** заменить семантику «NULL = сейчас» на
-     `NextAttemptAt = CreatedAt` — чистый range-запрос без OR. Ок?
-   - **`COUNT(*)` на каждый ingest** (`depth` в `IngestEvent`) — посмотри
-     план `count(*)`: растёт ли cost с таблицей? Кандидаты на замену:
-     приближённый `reltuples` из `pg_class`, счётчик в памяти,
-     вынос проверки в sweeper.
-
-4. **Миграцию пишу я** по твоему списку решений (новый индекс /
-   заполнение NULL / drop старого).
-
-**Acceptance criteria:**
-- [ ] Планы выполнения прогнаны, вывод сохранён (вставка в PLAN.md)
-- [ ] По каждому из 3 решений — вердикт + почему (может быть
-      «оставить как есть» — но обоснованное)
-- [ ] Если решено менять индекс — миграция применена, план перепроверен
-
-**Проверка:** `EXPLAIN ANALYZE` до и после — cost/rows в отчёте.
+### TASK-010 · Индексы БД на живых данных — `review`
+Делегировано Devin (2026-10-25). Прогнано на 4806 строках
+(4791 Delivered + 15 DLQ): оба горячих скана по
+`IX_Events_Status_NextAttemptAt`, due-scan 0.07мс. **Решения:**
+полный индекс держим (L4 закрыт); `COUNT` живых статусов — index-only
+по малому поддереву, тревога снята; `NextAttemptAt=CreatedAt` —
+отложено (low value). Найдена точка роста: `/stats` — seq scan
+по всей таблице, лечится кэшем при шкале (в `next.md`). Детали —
+PLAN.md журнал. Ждёт твоего «согласен».
 
 ### TASK-011 · EN-перевод документов · `todo`
 **Зона:** платформа · **Зависит от:** финал системы. Перевести гайды и
