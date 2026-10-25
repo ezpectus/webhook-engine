@@ -21,3 +21,4 @@
 | **P-11** Параллельные воркеры | `Delivery:WorkerParallelism` (4): N читателей канала | `47df4b5` | done |
 | **TASK-002** Dedup приём | insert-first, `23505`→duplicate, fail-open Redis | `c781b8c` | `review` — чекпоинты частично |
 | **TASK-003** Очередь | bounded channel + потолок (D3) + sweeper/lease; гонка В3 починена | `9da2bec` `0829b37` | `review` |
+| **P-12** Живой прогон | PG+Redis+MockReceiver в compose, API локально :5269. **Результаты:** 3000 отправлено (rps 50, dup 30%) → 2055 accepted, 946 dedup-хитов, 0 err; **PG: 2055 событий = 2055 попыток = ровно 1 каждая, 0 мульти-attempt** — дубли доставки = 0. mode=500: 5 ретраев → DLQ `max attempts (5) exhausted` ✓; ретраи каденсированы тиком sweeper (~10с — backoff<10с сливается, зафиксировано как граница). flap: [500→200] восстановился ✓. Replay: AttemptCount→0, история сохранена, цикл пошёл заново ✓ | `—` | done |

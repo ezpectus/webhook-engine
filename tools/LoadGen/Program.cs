@@ -14,7 +14,7 @@ var webhook = GetArg("--webhook", null)
 var rps = int.Parse(GetArg("--rps", "50")!);
 var seconds = int.Parse(GetArg("--seconds", "30")!);
 var burst = args.Contains("--burst");
-var dupRate = double.Parse(GetArg("--dup", "0")!);
+var dupRate = double.Parse(GetArg("--dup", "0")!, System.Globalization.CultureInfo.InvariantCulture);
 
 using var http = new HttpClient();
 var rng = new Random();
