@@ -5,8 +5,9 @@
 
 | Таск | Что сделано | Коммиты | Статус |
 | --- | --- | --- | --- |
-| **TASK-004** Token bucket | Bucket юзера в `/* */` + референс; 6 тестов; epsilon-фикс; лимитер врезан в воркер (D7) | `ee8ea8e` `0829b37` | `review` — ждёт голосовое объяснение |
-| **TASK-006** DLQ endpoints | `GET /deadletters`, `POST .../replay` (D12: обход dedup, счётчик→0) | `cf0ef7c` | `review` — семантика на ревью |
+| **TASK-004** Token bucket | Bucket юзера в `/* */` + референс; 6 тестов; epsilon-фикс; лимитер врезан в воркер (D7); защита голосом 26.10 (старт-полный/ленивый refill/lock — эталоны в open_questions) | `ee8ea8e` `0829b37` | done |
+| **TASK-006** DLQ endpoints | `GET /deadletters`, `POST .../replay` (D12: обход dedup, счётчик→0); семантика подтверждена юзером + живым replay-циклом в хаос-прогоне | `cf0ef7c` | done |
+| **TASK-009** Наблюдаемость | `EngineMetrics` + `/metrics` + панель; выбор юзера 26.10: `dlq_live`, `staleReclaims`, `dedupHits`; эталон — `queue_depth`↑ при плоском `sendsOk` для молчаливой потери | `47df4b5` | done |
 | **TASK-008** Consistent hashing | `ConsistentHashRing` + 4 теста (релокация ~1/n); в систему не врезан | `0829b37` | `review` |
 | **P-01** Scaffold | solution, DI, `/health` | `5de7629` | done |
 | **P-02** Schema+migrations | EF-схема, миграции Initial+UpdatedAt; без IRepository (D15) | `5de7629` `9da2bec` | done |
