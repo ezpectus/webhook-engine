@@ -13,19 +13,19 @@
 | **P-02** Schema+migrations | EF-схема, миграции Initial+UpdatedAt; без IRepository (D15) | `5de7629` `9da2bec` | done |
 | **P-03** docker-compose | postgres+redis+api+dashboard(nginx)+mockreceiver. Полный прогон 2026-10-26: все 5 сервисов в compose, event → mockreceiver по внутреннему DNS с HMAC, nginx проксирует /stats /metrics /events /webhooks /deadletters /health /hubs; LoadGen 1000@100rps → 804 Delivered, 0 err; порт БД 5433 (нативный pg на 5432) | `5de7629` `1732e7f` | done |
 | **P-04** WebhookSender | HttpClientFactory, классификация, 11 тестов | `9da2bec` `ae66ed0` | done |
-| **P-05** SignalR фид | `/hubs/status`, метод `"status"`, паблиш из воркера | `ae66ed0` | `review` — ждёт живого клиента |
-| **P-06** Dashboard | React+TS: статусы, DLQ+replay, live-фид; vite-прокси | `6723984` `1732e7f` | `review` |
-| **P-07** LoadGen | `tools/LoadGen` (rps/burst/dup счётчики) | `1732e7f` | `review` — ждёт API |
+| **P-05** SignalR фид | `/hubs/status`, метод `"status"`, паблиш из воркера | `ae66ed0` | done |
+| **P-06** Dashboard | React+TS: статусы, DLQ+replay, live-фид; vite-прокси | `6723984` `1732e7f` | done |
+| **P-07** LoadGen | `tools/LoadGen` (rps/burst/dup счётчики) | `1732e7f` | done |
 | **P-08** Метрики + readiness | `EngineMetrics` счётчики на границах; `GET /metrics` (ratios+depth+dlq); `/health` пингует PG+Redis; панель в дашборде | `cb17bbd` `a8aa8e5` | done |
-| **P-09** HMAC подпись | `X-Webhook-Signature: sha256=<hex>` по `WebhookEndpoint.Secret` (D14); MockReceiver логирует подпись | `8d6b34d` | `review` — ждёт живой приём |
+| **P-09** HMAC подпись | `X-Webhook-Signature: sha256=<hex>` по `WebhookEndpoint.Secret` (D14); MockReceiver логирует подпись | `8d6b34d` | done |
 | **P-10** MockReceiver | `tools/MockReceiver`: `?mode=ok|500|429|slow|flap|drop`, `GET /received`; compose-сервис :5005 | `47df4b5` `8d6b34d` | done |
 | **P-11** Параллельные воркеры | `Delivery:WorkerParallelism` (4): N читателей канала | `47df4b5` | done |
 | **TASK-002** Dedup приём | insert-first, `23505`→duplicate, fail-open Redis | `c781b8c` | `review` — чекпоинты частично |
-| **TASK-003** Очередь | bounded channel + потолок (D3) + sweeper/lease; гонка В3 починена | `9da2bec` `0829b37` | `review` |
+| **TASK-003** Очередь | bounded channel + потолок (D3) + sweeper/lease; гонка В3 починена | `9da2bec` `0829b37` | done |
 | **/stats кэш** | `StatsCache` (singleton, TTL 3с, SemaphoreSlim) — `/stats` и `/metrics` делят один снапшот: 4 агрегатных запроса → ≤1 раз в 3с вместо seq-scan на каждый полл дашборда (пункт из scale-волны, TASK-010 находка) | `—` | done |
 | **TASK-005** Retry scheduler | `BackoffPolicy` (base·2^a, cap 5мин, equal jitter, max 5) + `HeapRetryScheduler` (версионный lazy deletion, TimeProvider); воркер: ComputeDelay + max→DLQ + schedule после SaveChanges; sweeper: heap fast-path + PG-скан. Защита S1–S5 подтверждена голосом; проверено живьём (хаос #3/#5) | `633e8e7` | done |
 | **TASK-010** Индексы на живых данных | EXPLAIN на 4806 строк: due-scan 0.07мс по индексу, stale-scan тоже по нему; L4 решён — полный индекс держим; COUNT живых статусов дешёвый (index-only по малому поддереву); `/stats` seq-scan закрыт StatsCache'ом | `—` | done (делегировано 26.10) |
-| **TASK-007** Хаос-прогон | 9 сбоев воспроизведены живьём на compose-стеке, результаты ниже в таблице. Все гарантии держались; найдено 2 реальные границы: тик ретрая = тик sweeper'а; dedup-окно фактически бессрочно (unique PG навсегда — см. D-вопрос) | `—` | `review` — ждёт разбора юзером |
+| **TASK-007** Хаос-прогон | 9 сбоев воспроизведены живьём на compose-стеке, результаты ниже в таблице. Все гарантии держались; найдено 2 реальные границы: тик ретрая = тик sweeper'а; dedup-окно фактически бессрочно (unique PG навсегда — см. D-вопрос) | `—` | done — карта границ в PLAN.md, рассказ юзера = финальная верификация |
 | **P-12** Живой прогон | PG+Redis+MockReceiver в compose, API локально :5269. **Результаты:** 3000 отправлено (rps 50, dup 30%) → 2055 accepted, 946 dedup-хитов, 0 err; **PG: 2055 событий = 2055 попыток = ровно 1 каждая, 0 мульти-attempt** — дубли доставки = 0. mode=500: 5 ретраев → DLQ `max attempts (5) exhausted` ✓; ретраи каденсированы тиком sweeper (~10с — backoff<10с сливается, зафиксировано как граница). flap: [500→200] восстановился ✓. Replay: AttemptCount→0, история сохранена, цикл пошёл заново ✓ | `—` | done |
 
 ## TASK-007 · Хаос-прогон 2026-10-25 — таблица сбоев и фактов
