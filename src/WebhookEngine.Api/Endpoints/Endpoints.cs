@@ -190,19 +190,10 @@ public static class Endpoints
     }
 
     private static async Task<IResult> GetStats(
-        WebhookEngineDbContext db, CancellationToken ct)
+        WebhookEngineDbContext db, StatsCache stats, CancellationToken ct)
     {
-        var byStatus = await db.Events.AsNoTracking()
-            .GroupBy(e => e.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
-            .ToListAsync(ct);
-        var liveDeadLetters = await db.DeadLetters
-            .CountAsync(d => d.ReplayedAt == null, ct);
-        return Results.Ok(new
-        {
-            byStatus = byStatus.ToDictionary(x => x.Status.ToString(), x => x.Count),
-            liveDeadLetters
-        });
+        var s = await stats.GetAsync(db, ct);
+        return Results.Ok(new { byStatus = s.ByStatus, liveDeadLetters = s.LiveDeadLetters });
     }
 
     private static async Task<IResult> GetEvent(
@@ -246,16 +237,10 @@ public static class Endpoints
     private static async Task<IResult> GetMetrics(
         WebhookEngineDbContext db,
         WebhookEngine.Core.Metrics.EngineMetrics m,
+        StatsCache stats,
         CancellationToken ct)
     {
-        var depth = await db.Events.CountAsync(
-            e => e.Status != EventStatus.Delivered && e.Status != EventStatus.DeadLettered, ct);
-        var dlqLive = await db.DeadLetters.CountAsync(d => d.ReplayedAt == null, ct);
-        var byStatus = await db.Events.AsNoTracking()
-            .GroupBy(e => e.Status)
-            .Select(g => new { g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Key.ToString(), x => x.Count, ct);
-        var delivered = await db.Events.CountAsync(e => e.Status == EventStatus.Delivered, ct);
+        var s = await stats.GetAsync(db, ct);
         var sent = m.SendsOk + m.SendsRetryable + m.SendsNonRetryable;
 
         return Results.Ok(new
@@ -263,16 +248,16 @@ public static class Endpoints
             dedup_hit_ratio = m.DedupHits + m.EventsAccepted > 0
                 ? (double)m.DedupHits / (m.DedupHits + m.EventsAccepted) : 0.0,
             delivery_retry_rate = sent > 0 ? (double)m.SendsRetryable / sent : 0.0,
-            queue_depth = depth,
-            dlq_live = dlqLive,
+            queue_depth = s.Depth,
+            dlq_live = s.LiveDeadLetters,
             counters = new
             {
                 m.EventsAccepted, m.EventsRejected, m.DedupHits,
                 m.SendsOk, m.SendsRetryable, m.SendsNonRetryable,
                 m.LimiterDelays, m.StaleReclaims
             },
-            byStatus,
-            delivered
+            byStatus = s.ByStatus,
+            delivered = s.Delivered
         });
     }
 

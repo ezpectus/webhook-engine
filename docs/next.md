@@ -33,9 +33,8 @@
    миграцию одновременно (EF Migrate не concurrency-safe). Варианты:
    миграция как отдельный job/step в CI, или advisory lock в PG.
 10. **ConsistentHashRing врезка** — готов и оттестирован, ждёт повода.
-11. **`/stats` seq scan** — `GROUP BY Status` читает всю таблицу
-    (~300мс на 1M строк, поллится дашбордом каждые 2с). Лечится
-    кэшем из EngineMetrics-итогов — TASK-010, измерено.
+11. ~~`/stats` seq scan~~ ✓ закрыто `StatsCache` (2026-10-26): один
+    снапшот на /stats+/metrics, TTL 3с — seq-scan максимум раз в 3с.
 
 ## Портфолио-финал
 

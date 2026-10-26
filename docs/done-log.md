@@ -10,7 +10,7 @@
 | **TASK-008** Consistent hashing | `ConsistentHashRing` + 4 теста (релокация ~1/n); в систему не врезан | `0829b37` | `review` |
 | **P-01** Scaffold | solution, DI, `/health` | `5de7629` | done |
 | **P-02** Schema+migrations | EF-схема, миграции Initial+UpdatedAt; без IRepository (D15) | `5de7629` `9da2bec` | done |
-| **P-03** docker-compose | postgres+redis+api+dashboard(nginx) | `5de7629` `1732e7f` | `review` — Docker не поднят |
+| **P-03** docker-compose | postgres+redis+api+dashboard(nginx)+mockreceiver. Полный прогон 2026-10-26: все 5 сервисов в compose, event → mockreceiver по внутреннему DNS с HMAC, nginx проксирует /stats /metrics /events /webhooks /deadletters /health /hubs; LoadGen 1000@100rps → 804 Delivered, 0 err; порт БД 5433 (нативный pg на 5432) | `5de7629` `1732e7f` | done |
 | **P-04** WebhookSender | HttpClientFactory, классификация, 11 тестов | `9da2bec` `ae66ed0` | done |
 | **P-05** SignalR фид | `/hubs/status`, метод `"status"`, паблиш из воркера | `ae66ed0` | `review` — ждёт живого клиента |
 | **P-06** Dashboard | React+TS: статусы, DLQ+replay, live-фид; vite-прокси | `6723984` `1732e7f` | `review` |
@@ -21,6 +21,7 @@
 | **P-11** Параллельные воркеры | `Delivery:WorkerParallelism` (4): N читателей канала | `47df4b5` | done |
 | **TASK-002** Dedup приём | insert-first, `23505`→duplicate, fail-open Redis | `c781b8c` | `review` — чекпоинты частично |
 | **TASK-003** Очередь | bounded channel + потолок (D3) + sweeper/lease; гонка В3 починена | `9da2bec` `0829b37` | `review` |
+| **/stats кэш** | `StatsCache` (singleton, TTL 3с, SemaphoreSlim) — `/stats` и `/metrics` делят один снапшот: 4 агрегатных запроса → ≤1 раз в 3с вместо seq-scan на каждый полл дашборда (пункт из scale-волны, TASK-010 находка) | `—` | done |
 | **TASK-005** Retry scheduler | `BackoffPolicy` (base·2^a, cap 5мин, equal jitter, max 5) + `HeapRetryScheduler` (версионный lazy deletion, TimeProvider); воркер: ComputeDelay + max→DLQ + schedule после SaveChanges; sweeper: heap fast-path + PG-скан. Защита S1–S5 подтверждена голосом; проверено живьём (хаос #3/#5) | `633e8e7` | done |
 | **TASK-010** Индексы на живых данных | EXPLAIN на 4806 строк: due-scan 0.07мс по индексу, stale-scan тоже по нему; L4 решён — полный индекс держим; COUNT живых статусов дешёвый (index-only по малому поддереву); `/stats` seq-scan — точка роста, в scale-волну | `—` | `review` — ждёт «согласен» |
 | **TASK-007** Хаос-прогон | 9 сбоев воспроизведены живьём на compose-стеке, результаты ниже в таблице. Все гарантии держались; найдено 2 реальные границы: тик ретрая = тик sweeper'а; dedup-окно фактически бессрочно (unique PG навсегда — см. D-вопрос) | `—` | `review` — ждёт разбора юзером |

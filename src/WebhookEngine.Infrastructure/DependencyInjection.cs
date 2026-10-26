@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddSingleton<IEventQueue, EventQueue>();
         services.AddSingleton<IWebhookRateLimiter, RateLimiting.TokenBucketRateLimiter>();
         services.AddSingleton<Core.Metrics.EngineMetrics>();
+        services.AddSingleton<Persistence.StatsCache>();
         services.AddSingleton(new BackoffPolicy(
             TimeSpan.FromSeconds(config.GetValue("Retry:BaseDelaySeconds", 1)),
             TimeSpan.FromSeconds(config.GetValue("Retry:MaxDelaySeconds", 300)),
