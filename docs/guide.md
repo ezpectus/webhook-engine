@@ -83,18 +83,24 @@ SweeperService (каждые 10с, бережно)
 
 ## Конфиг (appsettings.json)
 
-| Ключ | Дефолт | За что |
-| --- | --- | --- |
-| `Dedup:WindowHours` | 24 | TTL окна дедупа (Redis) |
-| `Queue:Capacity` | 10000 | размер bounded канала |
-| `Queue:PendingThreshold` | 100000 | 503 при недоставленных больше порога |
-| `Sweeper:IntervalSeconds` | 10 | период обхода |
-| `Sweeper:BatchSize` | 500 | батч за обход |
-| `Sweeper:InFlightTimeoutMinutes` | 5 | lease-протухание |
-| `Delivery:WorkerParallelism` | 4 | параллельных читателей канала |
-| `Retry:BaseDelaySeconds` | 1 | база экспоненты |
-| `Retry:MaxDelaySeconds` | 300 | cap backoff |
-| `Retry:MaxAttempts` | 5 | потолок → DLQ |
+Значения **локально-оптимальные для демо/учёбы, не прод-рекомендуемые**
+— подобраны так, чтобы ретраи, backpressure и sweeper были видны
+живьём за секунды. Прод-направление указано в последнем столбце.
+
+| Ключ | Дефолт | За что | Прод-направление |
+| --- | --- | --- | --- |
+| `Dedup:WindowHours` | 24 | TTL окна дедупа (Redis) | как у Stripe, ок |
+| `Queue:Capacity` | 10000 | размер bounded канала | меньше — кусать раньше |
+| `Queue:PendingThreshold` | 10000 | 503 при недоставленных больше порога | растить по SLO |
+| `Sweeper:IntervalSeconds` | 2 | период обхода = тик ретраев | 5–15с (нагрузка на БД) |
+| `Sweeper:BatchSize` | 500 | батч за обход | по метрикам очереди |
+| `Sweeper:InFlightTimeoutMinutes` | 5 | lease-протухание | ≈ max(delivery+retry окно) |
+| `Delivery:WorkerParallelism` | 4 | параллельных читателей канала | 8–16 / CPU |
+| `Delivery:SenderTimeoutSeconds` | 10 | HTTP-таймаут отправки | 5–30 по SLO рецепиентов |
+| `Retry:BaseDelaySeconds` | 1 | база экспоненты | ок |
+| `Retry:MaxDelaySeconds` | 300 | cap backoff | ок |
+| `Retry:MaxAttempts` | 5 | потолок → DLQ | ок |
+| `Stats:CacheTtlSeconds` | 3 | TTL снапшота /stats + /metrics | 5–30 по частоте поллинга |
 
 ## Известные края (не баги — предметы разговора)
 

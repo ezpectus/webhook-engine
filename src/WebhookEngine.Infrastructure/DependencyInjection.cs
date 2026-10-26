@@ -33,13 +33,15 @@ public static class DependencyInjection
         services.AddSingleton<IEventQueue, EventQueue>();
         services.AddSingleton<IWebhookRateLimiter, RateLimiting.TokenBucketRateLimiter>();
         services.AddSingleton<Core.Metrics.EngineMetrics>();
-        services.AddSingleton<Persistence.StatsCache>();
+        services.AddSingleton(_ => new Persistence.StatsCache(
+            ttlSeconds: config.GetValue("Stats:CacheTtlSeconds", 3)));
         services.AddSingleton(new BackoffPolicy(
             TimeSpan.FromSeconds(config.GetValue("Retry:BaseDelaySeconds", 1)),
             TimeSpan.FromSeconds(config.GetValue("Retry:MaxDelaySeconds", 300)),
             config.GetValue("Retry:MaxAttempts", 5)));
         services.AddSingleton<IRetryScheduler, HeapRetryScheduler>();
-        services.AddHttpClient<WebhookSender>(c => c.Timeout = TimeSpan.FromSeconds(10));
+        services.AddHttpClient<WebhookSender>(c => c.Timeout =
+            TimeSpan.FromSeconds(config.GetValue("Delivery:SenderTimeoutSeconds", 10)));
 
         return services;
     }
