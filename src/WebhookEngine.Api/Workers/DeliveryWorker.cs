@@ -139,7 +139,10 @@ public sealed class DeliveryWorker(
             else
             {
                 tracked.Status = EventStatus.RetryScheduled;
-                tracked.NextAttemptAt = now + backoff.ComputeDelay(tracked.AttemptCount);
+                // attemptCount-1: ComputeDelay ждёт 0-based номер попытки,
+                // а счётчик уже инкрементирован (1-я неудача → 1). Было
+                // ComputeDelay(AttemptCount) → первая задержка 2·base вместо base.
+                tracked.NextAttemptAt = now + backoff.ComputeDelay(tracked.AttemptCount - 1);
             }
         }
 

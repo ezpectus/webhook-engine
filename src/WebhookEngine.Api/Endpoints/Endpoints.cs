@@ -186,12 +186,27 @@ public static class Endpoints
         // История Attempts — аудит, AttemptCount обнуляем: новый заход получает
         // свежий бюджет ретраев.
         var now = DateTimeOffset.UtcNow;
-        ev.Status = queue.TryEnqueue(ev) ? EventStatus.InFlight : EventStatus.Pending;
         ev.AttemptCount = 0;
         ev.NextAttemptAt = null;
         ev.UpdatedAt = now;
         dl.ReplayedAt = now;
+
+        // Фикс ревью: сначала durable-запись, потом enqueue — как в ingest.
+        // Было: TryEnqueue до SaveChanges → воркер мог подхватить элемент,
+        // пока в PG ещё DeadLettered, пропустить как stale, а строка
+        // висла InFlight до lease-протухания (5 мин задержки). Теперь:
+        // claim InFlight → enqueue → не влезло → откат в Pending.
+        ev.Status = EventStatus.InFlight;
         await db.SaveChangesAsync(ct);
+        if (!queue.TryEnqueue(ev))
+        {
+            await db.Events
+                .Where(e => e.Id == ev.Id && e.Status == EventStatus.InFlight)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(e => e.Status, EventStatus.Pending)
+                    .SetProperty(e => e.UpdatedAt, now), ct);
+            ev.Status = EventStatus.Pending;
+        }
 
         return Results.Accepted(value: new { eventId = ev.Id, status = ev.Status.ToString() });
     }
