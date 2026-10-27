@@ -9,6 +9,37 @@
 
 ---
 
+## 2026-10-26 — ревью-фиксы [D]
+
+### `158fdfa` — края из ревью: backoff + replay-ordering
+- `DeliveryWorker.cs` — `ComputeDelay(AttemptCount - 1)`: первая
+  задержка была `2·base` вместо `base` (off-by-one)
+- `Endpoints.cs` — replay: enqueue переставлен ПОСЛЕ commit + откат
+  в `Pending` при полном канале (зеркалит ingest-паттерн)
+- Комментарии «Было: …» рядом с фиксами; 40/40
+
+### `8265dec` — баги из ревью: dispose + валидация rate
+- `WebhookSender.cs` — `using var resp`: недиспознутый ответ держал
+  соединение в пуле до GC → исчерпание пула на высоком RPS
+- `Endpoints.cs` — `rateLimitPerSecond <= 0` → 400: раньше проходил и
+  взрывал `TokenBucket` при каждой доставке (вечный crash-loop)
+- Комментарии «Было: …»; 40/40
+
+## 2026-10-26 — ранее в этот день
+
+- `a22d04f` — правки по ревью доков: честные цифры LoadGen, формулировка
+  «channel loss», указатель на H-3, юниты H-1, payload-hash в H-2,
+  EF-concurrency в H-3; RU-копии → `docs/ru/` [docs]
+- `926ae8a` — `tasks.md`: практика руками H-1/H-2/H-3 (dedup-окно,
+  Idempotency-Key, lease-version) [docs]
+- `14c1d2f` — TASK-011: EN-перевод ядра доков, RU в `docs/guides/ru/` [docs]
+- `0f789ec` — правка записи: ответ юзера «бакет» верный [docs]
+- `2b98a1b` — TASK-004/006/009 → done, T4 разобран [docs]
+- `86e369a` — конфиг локально-оптимальный + SenderTimeout/CacheTtl в
+  конфиг; guide таблица «прод-направление» [D+docs]
+- `c46500b` — полный 5-сервисный compose-прогон (P-03 ✓), StatsCache
+  (TTL 3с), `/metrics` на снапшоте [D]
+
 ## 2026-10-25
 
 ### `b634b09` — TASK-010: EXPLAIN на живых данных [docs]
