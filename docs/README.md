@@ -1,18 +1,19 @@
-# Документы проекта — навигация
+# Project docs — navigation
 
-| Файл | Что это | Когда читать |
+| File | What it is | When to read |
 | --- | --- | --- |
-| `architecture.md` | архитектурный стиль (D15), компоненты, схема БД, гарантии, роадмап | хочешь понять «как устроено» |
-| `guide.md` | онбординг по **реальному коду**: путь события, статусы, карта границ, конфиг | первый файл после README |
-| `tasks.md` | живой бэклог — только `todo`/`review` | «что делать дальше» |
-| `done-log.md` | архив закрытых тасок с файлами и коммитами | «что уже сделано» |
-| `diagrams/system.md` | mermaid-диаграммы компонентов и data flow | визуальная картина |
-| `next.md` | очередь строительства — что дальше и почему | планирование |
-| `guides/task_guide.md` | концепции ручных тасок (bucket, heap) без кода | перед TASK-004/005 |
-| `guides/task004_walkthrough.md` | пошаговый путь TokenBucket (EN+RU) | во время TASK-004 |
-| `guides/task005_walkthrough.md` | пошаговый путь RetryScheduler (EN+RU) | во время TASK-005 |
-| `guides/concepts.md` | «что, зачем и когда»: CORS, CQRS, эвристика паттернов | фоновое чтение |
-| `guides/open_questions.md` | все открытые вопросы: ревью, решения, тренажёр | отвечать голосом когда есть время |
+| `architecture.md` | architectural style (D15), components, DB schema, guarantees, roadmap | to understand "how it's built" |
+| `guide.md` | onboarding to the **real code**: event path, statuses, boundary map, config | first file after README |
+| `tasks.md` | live backlog — only `todo`/`review` | "what's next" |
+| `done-log.md` | archive of closed tasks with files and commits | "what's already done" |
+| `diagrams/system.md` | mermaid diagrams of components and data flow | the visual picture |
+| `next.md` | construction queue — what's next and why | planning |
+| `guides/task_guide.md` | concepts behind the hands-on tasks (bucket, heap) without code | before TASK-004/005 |
+| `guides/task004_walkthrough.md` | step-by-step TokenBucket path | during TASK-004 |
+| `guides/task005_walkthrough.md` | step-by-step RetryScheduler path | during TASK-005 |
+| `guides/concepts.md` | "what, why, when": CORS, CQRS, pattern heuristics | background reading |
+| `guides/open_questions.md` | all open questions: reviews, decisions, trainer | answer by voice when there's time |
 
-Корневые: `README.md` (обзор) · `PLAN.md` (журнал решений + метрики) ·
-`CHANGELOG.md` (коммит → файлы → таск) · `AGENTS.md` (правила).
+Root level: `README.md` (overview) · `PLAN.md` (decision journal +
+metrics + failure-boundary map) · `CHANGELOG.md` (commit → files →
+task) · `AGENTS.md` (rules).

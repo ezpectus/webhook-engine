@@ -87,11 +87,18 @@ GET  /hubs/status                 SignalR status feed
 
 ## Status
 
-Full delivery loop implemented end-to-end: ingest with dedup → atomic
-claim → bounded queue → parallel workers → token bucket → signed send →
-backoff/jitter retries → DLQ + replay — with metrics, readiness, and a
-live dashboard. Remaining: chaos-scenario tests, Docker verification,
-multi-instance concerns (Redis-backed limiter, leader election). See
+Full delivery loop verified end-to-end on the containerized stack:
+ingest with dedup → atomic claim → bounded queue → parallel workers →
+token bucket → signed send → backoff/jitter retries → DLQ + replay.
+
+**Proven live:** 9 chaos failures reproduced on the running system
+(PG/Redis down, restart mid-retry, full channel, flapping endpoint,
+lease expiry mid-send) — every guarantee held. LoadGen ~6000 events,
+zero loss after accept. The evidence-backed duplicate/loss map lives
+in [PLAN.md](PLAN.md#failure-boundary-map-where-duplicates-where-loss-proven-live).
+
+Remaining: English docs sweep (TASK-011), optional scale wave
+(Redis-backed limiter, leader election, multi-instance). See
 [docs/tasks.md](docs/tasks.md) for the backlog and
 [docs/next.md](docs/next.md) for the construction queue.
 

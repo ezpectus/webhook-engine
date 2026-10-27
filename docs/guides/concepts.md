@@ -1,137 +1,142 @@
-# Концепции и стек — «что, зачем и когда»
+# Concepts & stack — "what, why, when"
 
-Шпаргалка по терминам, которые встречаются в проекте и в универе.
-Пишется по мере вопросов. (На русском пока; в конце проекта — перевод.)
+A cheat sheet for terms that come up in the project and in coursework.
 
 ---
 
-## CORS — про что вообще
+## CORS — what it's even about
 
-Это **не фича API**, а механизм безопасности **браузера**.
-Same-origin policy: страница с origin A не может читать ответы
-с origin B, если B явно не разрешил это заголовками
-`Access-Control-Allow-*`.
+It's **not an API feature** — it's a **browser** security mechanism.
+Same-origin policy: a page on origin A cannot read responses from
+origin B unless B explicitly allowed it with
+`Access-Control-Allow-*` headers.
 
-Ключевое, что почти никто не говорит явно:
+The key thing almost nobody says out loud:
 
-- **форсирует браузер, не сервер.** `curl`, Postman, backend-to-backend —
-  для них CORS не существует. Запрос уходит всегда; браузер просто
-  прячет *ответ* от твоего JS-кода;
-- preflight — `OPTIONS`-запрос перед «сложными» запросами (кастомные
-  хедеры, не-GET/POST и т.п.).
+- **the browser enforces it, not the server.** `curl`, Postman,
+  backend-to-backend — CORS doesn't exist for them. The request always
+  goes out; the browser just hides the *response* from your JS;
+- preflight — an `OPTIONS` request before "non-simple" requests
+  (custom headers, non-GET/POST, etc.).
 
-### Когда он реально нужен
+### When it's actually needed
 
-- Браузерное приложение ходит в API на **другом origin** напрямую
+- A browser app calls an API on a **different origin** directly
   (`api.foo.com` vs `foo.com`; `localhost:5173` → `localhost:5269`).
-- Публичное API для чужих фронтендов.
+- A public API meant for other people's frontends.
 
-### Почему у нас его нет
+### Why we don't have it
 
-- В dev: vite proxy — браузер ходит на `:5173` (тот же origin), vite
-  проксирует на `:5269` со стороны сервера. Сервер→сервер = CORS
-  неприменим вообще.
-- В проде: дашборд может отдаваться тем же хостом — снова same origin.
-- Добавить `UseCors` сейчас = мёртвая настройка «на вырост». Когда
-  появится реальный кросс-ориджин клиент — добавим с конкретным
-  списком origin'ов (не `AllowAnyOrigin` + credentials — это дыра).
+- In dev: the vite proxy — the browser talks to `:5173` (same origin),
+  vite proxies to `:5269` server-side. Server→server = CORS doesn't
+  apply at all.
+- In prod: the dashboard can be served by the same host — same origin
+  again.
+- Adding `UseCors` now = dead config "for growth". When a real
+  cross-origin client shows up we'll add it with a concrete origin
+  list (not `AllowAnyOrigin` + credentials — that's a hole).
 
-### Почему в универе его «делают»
+### Why coursework projects "do it"
 
-Шаблонные проекты ставят `AllowAnyOrigin` на всякий случай — там это
-безболезненно, потому что API дергают напрямую из браузера на другом
-порту. Это легитимно для учебки, но в проде правило другое:
-минимальный список origin'ов.
-
----
-
-## CQRS — про что
-
-**Command Query Responsibility Segregation**: раздельные модели
-(а иногда и хранилища) для записи и чтения. Команды меняют состояние;
-запросы читают оптимизированные под чтение представления.
-
-В .NET обычно приезжает с MediatR: `CreateEventCommand → Handler`,
-`GetDlqQuery → Handler`.
-
-### Когда оправдан
-
-- Формы записи и чтения **реально разные** (денормализованные
-  read-модели, event sourcing).
-- Несимметричная нагрузка — читают в тысячи раз чаще, чем пишут.
-- Команды с тяжёлой валидацией и инвариантами.
-
-### Когда это оверкилл (наш случай)
-
-- Домен CRUD-подобный: `NotificationEvent` читается и пишется в одном
-  виде. Command/Query-хендлеры удвоили бы код с нулём выгоды.
-- `/stats` читает прямо из той же таблицы — честно и дёшево.
-- CQRS — про **несимметрию read/write**, не про «хорошую архитектуру».
-  Нет несимметрии → нет CQRS.
-
-### Путаница, которую стоит разрулить
-
-- CQRS ≠ микросервисы, ≠ event sourcing (часто вместе, но не обязаны),
-  ≠ MediatR как декорация контроллеров.
-- «Методы Create/Get в одном сервисе» — это именование, не CQRS.
+Template projects slap `AllowAnyOrigin` on just in case — harmless
+there because the API is called straight from a browser on another
+port. Legitimate for learning, but the prod rule is different:
+a minimal origin list.
 
 ---
 
-## HMAC-подпись вебхуков — зачем и как
+## CQRS — what it is
 
-Когда мы шлём `POST` получателю, HTTPS защищает канал, но не отвечает
-на вопрос «а точно ли это прислал engine?». Любой, кто знает URL
-endpoint'а, мог бы кидать ему поддельные вебхуки.
+**Command Query Responsibility Segregation**: separate models
+(sometimes separate stores) for writes and reads. Commands mutate
+state; queries read read-optimized projections.
 
-Решение индустрии — **HMAC** (Hash-based Message Authentication Code):
+In .NET it usually arrives with MediatR:
+`CreateEventCommand → Handler`, `GetDlqQuery → Handler`.
 
-- у нас и у получателя есть общий `Secret`;
-- мы считаем `HMAC-SHA256(secret, тело)` и кладём в заголовок
-  `X-Webhook-Signature: sha256=<hex>`;
-- получатель считает то же самое у себя и сравнивает. Совпало —
-  тело не изменено и отправитель знал секрет.
+### When it's justified
 
-Важные свойства:
+- Write and read shapes are **genuinely different** (denormalized
+  read models, event sourcing).
+- Asymmetric load — reads thousands of times more frequent than writes.
+- Commands with heavy validation and invariants.
 
-- **подписывается тело, не заголовки** — при ретрае того же payload
-  подпись идентична (dedup-friendly);
-- сравнивать надо в constant time (`CryptographicOperations.FixedTimeEquals`),
-  иначе timing-атака;
-- секрет per-webhook, хранится в `webhook_endpoints.Secret` — утечка
-  одного не компрометит остальных;
-- это ровно `X-Hub-Signature-256` у GitHub — паттерн проверен.
+### When it's overkill (our case)
 
-Чего подпись **не** делает: не шифрует (это делает TLS), не защищает от
-replay без timestamp в подписываемых данных. Для нашего масштаба —
-достаточно; timestamp добавим если выйдем в паблик.
+- The domain is CRUD-like: `NotificationEvent` is read and written in
+  the same shape. Command/Query handlers would double the code for
+  zero benefit.
+- `/stats` reads straight from the same table — honest and cheap.
+- CQRS is about **read/write asymmetry**, not "good architecture".
+  No asymmetry → no CQRS.
+
+### Confusions worth untangling
+
+- CQRS ≠ microservices, ≠ event sourcing (often together, never
+  required), ≠ MediatR as controller decoration.
+- "Create/Get methods in one service" — that's naming, not CQRS.
 
 ---
 
-## Локальный прогон — как кормить систему
+## HMAC webhook signing — why and how
+
+When we POST to a receiver, TLS protects the channel but doesn't
+answer "did the engine actually send this?". Anyone who knows the
+endpoint URL could fire forged webhooks at it.
+
+The industry answer — **HMAC** (Hash-based Message Authentication
+Code):
+
+- we and the receiver share a `Secret`;
+- we compute `HMAC-SHA256(secret, body)` and put it in the
+  `X-Webhook-Signature: sha256=<hex>` header;
+- the receiver computes the same and compares. Match → the body is
+  unaltered and the sender knew the secret.
+
+Properties that matter:
+
+- **the body is signed, not the headers** — retrying the same payload
+  produces an identical signature (dedup-friendly);
+- compare in constant time (`CryptographicOperations.FixedTimeEquals`)
+  or you're open to a timing attack;
+- the secret is per-webhook, stored in `webhook_endpoints.Secret` —
+  leaking one doesn't compromise the rest;
+- this is exactly GitHub's `X-Hub-Signature-256` — a proven pattern.
+
+What the signature does **not** do: it doesn't encrypt (TLS does that)
+and doesn't stop replay without a timestamp inside the signed data.
+At our scale that's enough; we'll add a timestamp if we go public.
+
+---
+
+## Local run — how to feed the system
 
 ```
-dotnet run --project tools/MockReceiver        # приёмник :5005
+dotnet run --project tools/MockReceiver        # receiver :5005
 dotnet run --project tools/LoadGen -- --webhook <id> --rps 50 --seconds 60
 ```
 
-`MockReceiver` — фейковый endpoint с ручкой хаоса:
-`/hook` → 200 · `/hook?mode=500` → всегда 500 · `?mode=429` ·
-`?mode=slow` (15с — ловит таймаут sender'а) · `?mode=flap` (500/200
-попеременно) · `?mode=drop`. `GET /received` показывает что прилетело,
-включая заголовок подписи — можно глазами проверить HMAC.
+`MockReceiver` — a fake endpoint with a chaos switch:
+`/hook` → 200 · `/hook?mode=500` → always 500 · `?mode=429` ·
+`?mode=slow` (15s — triggers the sender's timeout) · `?mode=flap`
+(alternating 500/200) · `?mode=drop`. `GET /received` shows what
+arrived, including the signature header — you can eyeball the HMAC.
 
-Это полигон TASK-007: каждый mode — готовый сценарий сбоя.
+This is the TASK-007 range: each mode is a ready-made failure
+scenario.
 
 ---
 
-## Эвристика «тянуть паттерн или нет»
+## The "pull the pattern or not" heuristic
 
-Паттерн — плата за конкретную боль, не украшение. Три вопроса:
+A pattern is a payment for a specific pain, not a decoration.
+Three questions:
 
-1. Какая боль есть **сейчас**? (не «может понадобиться»)
-2. Что паттерн убирает — и сколько кода/абстракций добавляет?
-3. Дёшево ли ввести его позже, когда боль станет реальной?
+1. What pain exists **right now**? (not "might come in handy")
+2. What does the pattern remove — and how much code/abstraction does
+   it add?
+3. Is it cheap to introduce later, when the pain becomes real?
 
-`AllowAnyOrigin` на всякий случай, CQRS на CRUD, репозитории поверх EF,
-мапперы на каждый чих — классические примеры «на вырост», которые
-превращаются в шум.
+`AllowAnyOrigin` just in case, CQRS on CRUD, repositories over EF,
+mappers for every sneeze — the classic "for growth" items that turn
+into noise.

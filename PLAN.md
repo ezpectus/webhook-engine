@@ -1,17 +1,17 @@
-# PLAN — data flow и журнал решений
+# PLAN — data flow & decision journal
 
-> Заполняется вручную перед каждой стадией (см. AGENTS.md).
+> Filled in before each stage (see AGENTS.md).
 
-## Data flow события
+## Event data flow
 
 ```mermaid
 flowchart LR
     C[Client] -->|POST /events| A[Ingest API]
-    A --> V{Валидация}
-    V -->|невалид| R4[400 reject]
+    A --> V{Validation}
+    V -->|invalid| R4[400 reject]
     V -->|ok| D{Dedup: Redis SET NX}
-    D -->|дубль| R2[200 + event id]
-    D -->|новое| DB[(PG: events · Pending)]
+    D -->|dup| R2[200 + event id]
+    D -->|new| DB[(PG: events · Pending)]
     DB --> Q[(Channel: bounded)]
     Q --> W[Worker pool]
     W --> RL{Rate limiter}
@@ -22,120 +22,124 @@ flowchart LR
     H -->|max attempts| DLQ[(DeadLetters + reason)]
 ```
 
-Ключевой принцип: событие становится **непотеряемым** в момент записи
-в Postgres (стадия `DB`). До этого оно либо отвергнуто клиенту (400),
-либо ещё не принято (нет 202 — клиент ретраит). После записи — наша
-ответственность до `Delivered` или `DeadLettered`.
+Key principle: an event becomes **unlosable** at the moment it is
+written to Postgres (stage `DB`). Before that it is either rejected
+to the client (400) or not yet accepted (no 202 — the client retries).
+After the write it is our responsibility until `Delivered` or
+`DeadLettered`.
 
-## Карта «дубль / потеря» по стадиям
+## Duplicate / loss map by stage (design-time)
 
-| Стадия | Дубль возможен? | Потеря возможна? | Почему |
+| Stage | Duplicate possible? | Loss possible? | Why |
 | --- | --- | --- | --- |
-| HTTP приём → валидация | повторный POST клиента | нет — без 202 событие «не принято», клиент ретраит | потеря считается только после принятия |
-| Dedup (Redis SET NX) | да — после истечения TTL-окна или при другом ключе | при Redis-down: зависит от политики fail-open/fail-closed (открытый вопрос) | Redis — быстрый фильтр, не истина |
-| Запись в PG | нет — unique-индекс на IdempotencyKey | край: SET NX успел, insert нет → повтор клиента отсекается как дубль, а записи не было (открытый вопрос) | индекс — жёсткая граница |
-| Channel (in-memory) | нет | да — но событие уже в PG, восстановление по Status=Pending | очередь — транспорт, не хранилище |
-| Worker → отправка | да — endpoint получил, воркер умер до записи ack → ретрай | нет — фейл уходит на ретрай | допустимый дубль at-least-once |
-| Retry heap | нет | при рестарте, если heap только в памяти (открытый вопрос) | нужна стратегия восстановления |
-| DLQ | replay может дать дубль (допустимо) | нет — терминально, но читаемо и replayable | карантин, не мусорка |
+| HTTP ingest → validation | repeated client POST | no — without a 202 the event is "not accepted", the client retries | loss only counts after acceptance |
+| Dedup (Redis SET NX) | yes — after TTL window expires or with a different key | on Redis-down: depends on fail-open/fail-closed policy | Redis is a fast filter, not truth |
+| PG write | no — unique index on IdempotencyKey | edge: SET NX succeeded but insert didn't → client retry is cut as a dup while no row exists (resolved: insert-first) | the index is the hard boundary |
+| Channel (in-memory) | no | yes — but the event is already in PG, recovered via Status=Pending | queue is transport, not storage |
+| Worker → send | yes — endpoint got it, worker died before writing ack → retry | no — a failure goes to retry | legitimate at-least-once duplicate |
+| Retry heap | no | on restart if heap were memory-only | PG scan is truth; heap is an accelerator |
+| DLQ | replay can produce a dup (acceptable) | no — terminal, but queryable and replayable | quarantine, not a trash bin |
 
-## Метрики (черновик TASK-009 — на ревью юзера)
+## Metrics (TASK-009 — selected)
 
-| Метрика | Какой сбой/деградацию видно |
+| Metric | Which failure/degradation it shows |
 | --- | --- |
-| `dedup.hit_ratio` (dup/accepted) | всплеск повторной посылки клиентов; падение → кеш сдулся/Redis лёг |
-| `queue.depth` (Pending+InFlight+RetryScheduled) | рост → доставка не успевает за приёмом; 503 при потолке |
-| `delivery.duration_ms` (p50/p95) | endpoint получателя деградирует раньше, чем начнутся 5xx |
-| `delivery.retry_rate` | доля событий на ретраях — упавший endpoint или наш баг |
-| `dlq.size` (live) | молчаливая смерть событий; растёт → причина в reason |
-| `sweeper.stale_reclaims` | воркеры умирают/зависают — lease срабатывает слишком часто |
-| `latency.to_ack` (CreatedAt→DeliveredAt) | сквозная задержка системы, SLO-метрика |
+| `dedup.hit_ratio` (dup/accepted) | spike in client resubmits; a drop → cache blown / Redis down |
+| `queue.depth` (Pending+InFlight+RetryScheduled) | growth → delivery lags behind ingest; 503 at the ceiling |
+| `delivery.duration_ms` (p50/p95) | receiver endpoint degrading before 5xx appear |
+| `delivery.retry_rate` | share of events on retries — a down endpoint or our bug |
+| `dlq.size` (live) | silent death of events; growth → the reason field explains |
+| `sweeper.stale_reclaims` | workers dying/hanging — lease fires too often |
+| `latency.to_ack` (CreatedAt→DeliveredAt) | end-to-end system latency, the SLO metric |
 
-## Журнал решений
+## Decision journal
 
-| Дата | Решение | Контекст / почему |
+| Date | Decision | Context / why |
 | --- | --- | --- |
-| 2026-10-16 | Порядок приёма: валидация → dedup → PG → очередь → 202 | v1 (очередь → dedup → валидация → БД) отклонён: событие в памяти до записи = окно потери; дубли жрут ёмкость канала; unique-индекс и так ловит повторные записи |
-| 2026-10-16 | Ответ клиенту: `202 Accepted` + event id, только после записи в PG | 202 = «приняли, доставим»; id нужен клиенту для статуса в кабинете |
-| 2026-10-16 | Невалидное на входе → 400, не в DLQ | DLQ — для принятых, но недоставленных; мусор чинит клиент |
-| 2026-10-16 | Ack = `Status=Delivered` + `DeliveredAt` после 2xx | до ack событие обязано быть где-то в системе |
-| 2026-10-16 | При 500/timeout от endpoint'а — авто-ретрай (не только лог) | логи для людей, ретрай — поведение системы; см. TASK-005 |
-| 2026-10-16 | Ключ дедупа = SHA256(webhookId + payload) | без webhookId одинаковый payload для разных webhook'ов слился бы в один ключ — решение юзера |
-| 2026-10-16 | Ответ на дубль: `200` + исходный event id + флаг duplicate | клиент получает idempotent-ответ и может спросить статус события — решение юзера |
-| 2026-10-16 | Redis-down при dedup: fail-open (пропускаем дальше) | unique-индекс PG всё равно ловит дубль при insert — Redis лишь быстрый фильтр; fail-closed резал бы доступность без выигрыша в корректности |
-| 2026-10-16 | Dedup-порядок: insert в PG → затем SET NX в Redis | insert сам отсекает дубли индексом; закрывает край «SET успел, умер до insert» |
-| 2026-10-16 | TTL окна дедупа: 24ч (конфигурируемо) | ориентир — Stripe: их idempotency-ключи живут 24ч; окно = горизонт поздних ретраев клиента, не сетевая задержка |
-| 2026-10-17 | Insert-first подтверждён юзером | PG-индекс = источник истины, Redis = fast-path кеш |
-| 2026-10-17 | Redis-down → fail-open, подтверждено | PG-индекс ловит дубли независимо; цена — лишние insert-попытки при лёжке Redis |
-| 2026-10-17 | Sweeper обязателен | скан `Pending`, добирает «в PG есть, в канал не попало» (рестарт, переполнение); бережный — батчи + интервал |
-| 2026-10-17 | Переполнение: вариант D с потолком | всегда insert в PG + 202; reject 503 только когда `Pending` > порога (конфиг). PG = настоящая очередь, канал = fast-path. Потолок защищает таблицу от раздувания |
-| 2026-10-17 | Capacity канала ~10k | буфер на разрыв producer/consumer; ~10сек всплеска при стопе доставки |
-| 2026-10-17 | Rate-limit delay и retry — ОДИН механизм отложенной отправки | спящий воркер блокирует чужие события (head-of-line); задержка — это scheduled, не sleep |
-| 2026-10-17 | Backoff: max 5 попыток; base 1с, ×2, cap 5мин — подтверждено | юзер подтвердил дефолты |
-| 2026-10-18 | Checkpoint TASK-002/003 — частично (делегировано) | юзер верно нашёл fail-open, lease по UpdatedAt, retryable-коды; гонку разруливает PG-индекс (не Redis) — отвечено Devin; сценарий «умер до SaveChanges» → дубль получателю, потери нет |
-| 2026-10-17 | TASK-004/005 — режим «руками»: Devin не пишет, только менторит | учебные тикеты, чистые алгоритмы |
-| 2026-10-19 | Checkpoint В1 — верно; В2 (почему depth считает все статусы) — не закрыт, отложен | ответы юзера по-честному |
-| 2026-10-19 | TASK-006 эндпоинты делегированы Devin; DLQ-семантика — на ревью юзера | усталость, явное «делай сам» |
-| 2026-10-19 | P-05 SignalR фид: воркер паблишит статус после SaveChanges; ошибки фида глушим — наблюдаемость не блокирует доставку | платформа, делегировано |
-| 2026-10-19 | D15 архитектурный стиль: модульный монолит, Core/Infrastructure/Api; не микросервисы и не многослойка — обоснование в architecture.md | запрос юзера «зафиксировать почему» |
-| 2026-10-19 | P-06 дашборд + `GET /stats`; vite-прокси → :5269, CORS не используем; npm-скрипты через `node ...` из-за пробела в пути | платформа, делегировано |
-| 2026-10-20 | P-07 LoadGen (rps/burst/dup); dashboard в compose через nginx-прокси; P-02 закрыт без IRepository по D15 | платформа, делегировано; Docker не проверен |
-| 2026-10-21 | D16 bucket capacity = RateLimitPerSecond (секунда всплеска); jitter = equal (`delay/2 + rand(delay/2)`) | юзер выбрал; equal стабильнее — есть гарантированный половинный пол |
-| 2026-10-21 | Checkpoint: В3/В6/T1 разобраны голосом, частично — пояснения записаны (atomic claim; dedup TTL vs PG-вечность; дубль приёма vs отправки) | юзер отвечал в 2 ночи, фиксирую честно |
-| 2026-10-24 | TASK-004 написан юзером — логика верная; исправлено: дубликаты stub-методов, epsilon на границе токена; тесты делегированы Devin (6 зелёных) | hands-on выполнен; чекпоинт-объяснение ждёт |
-| 2026-10-24 | Гонка enqueue (В3) починена атомарным claim'ом `Pending→InFlight` в ingest и sweeper; откат при полном канале | край из guide.md |
-| 2026-10-24 | Лимитер врезан: `TokenBucketRateLimiter` (ConcurrentDictionary, D6/L1) + воркер откладывает по wait через RetryScheduled (D7); сигнатура `AcquireDelayAsync(+permitsPerSecond)` — на ревью | делегировано |
-| 2026-10-24 | TASK-008 `ConsistentHashRing` реализован (делегировано), в систему не врезан — ждёт мульти-инстанс | review |
-| 2026-10-24 | `/metrics`: EngineMetrics-счётчики + DB-derived (depth, dlq_live, ratios); `/health` → readiness PG+Redis; таблица метрик — черновик | TASK-009 частично |
-| 2026-10-24 | D14 реализована: HMAC-SHA256 подпись тела (`X-Webhook-Signature`); воркер шлёт `webhook.Secret`; `MockReceiver` в compose + лог подписи; параллелизм воркеров `Delivery:WorkerParallelism` | платформа |
-| 2026-10-25 | Redis fail-open закрыт на DI-границе: `abortConnect=false` — мёртвый Redis больше не роняет ingest резолвом | гарантия |
-| 2026-10-25 | TASK-005 (делегировано): `BackoffPolicy` exp·2^a + equal jitter + cap 5мин + max 5; `HeapRetryScheduler` — версионный lazy deletion; воркер: max-attempts → DLQ, schedule после SaveChanges; sweeper: heap fast-path + PG-скан (истина) | review — ждёт защиты юзером |
-| 2026-10-25 | Модель разработки зафиксирована: Kanban + XP соло (AGENTS) | процесс |
-| 2026-10-25 | `GET /webhooks`, `GET /events`, `GET /events/{id}` (+attempts), `DELETE /received` у MockReceiver — read-side дозакрыт | платформа |
-| 2026-10-17 | Неретраябельное: 4xx (кроме 429), кривой payload, неактивный webhook | правило: «изменится ли ответ от повтора?» нет → не ретрай |
-| 2026-10-17 | DLQ-условия: исчерпаны ретраи / неретраябельная ошибка / невалидный payload post-accept / webhook деактивирован | невалидное на входе — всё ещё 400, не DLQ |
-| 2026-10-17 | Replay идёт в обход dedup (тот же ключ съест фильтр) | status→Pending, история attempts — аудит, не трём |
-| 2026-10-17 | MVP без клиентского Idempotency-Key (content-hash); header — эволюция | юзер спросил «кому нужно» — клиентам со своими event id; отложено |
-| 2026-10-25 | TASK-010 EXPLAIN на 4806 строках: due-scan и stale-scan оба едут по `IX_Events_Status_NextAttemptAt` (0.07мс/0.02мс); **L4 решён — держим полный индекс**: partial на (0,2) сломал бы stale-scan в seq scan, а выигрыш 80кБ→~2кБ ничтожен; второй partial = write amplification без причины | делегировано Devin, на ревью |
-| 2026-10-25 | depth `COUNT(Status IN 0,1,2)` — Index Only Scan только по живым поддеревьям (delivered лежат в другой ветке ключа) → стоимость ограничена размером работы, не таблицы; прежняя тревога «горячий COUNT» снята данными | делегировано |
-| 2026-10-25 | `NextAttemptAt = CreatedAt` вместо NULL — отложено: OR+Filter в due-scan и так едет по индексу за 0.07мс; трюк дал бы чистый range, но цена — семантика «null = сейчас» и так работает | делегировано, low value |
-| 2026-10-25 | `/stats` = Seq Scan + HashAggregate (0.7мс на 5к; ~300мс на 1M строк каждые 2с — реальная точка роста). Не индексируется осмысленно; лечится кэшем из EngineMetrics-итогов при шкале — в scale-волну `next.md` | делегировано |
+| 2026-10-16 | Ingest order: validate → dedup → PG → queue → 202 | v1 (queue → dedup → validate → DB) rejected: event in memory before the write = a loss window; dups eat channel capacity; the unique index catches duplicate inserts anyway |
+| 2026-10-16 | Client response: `202 Accepted` + event id, only after the PG write | 202 = "accepted, will deliver"; the id lets the client poll status |
+| 2026-10-16 | Invalid input → 400, not DLQ | DLQ is for accepted-but-undeliverable; garbage is the client's to fix |
+| 2026-10-16 | Ack = `Status=Delivered` + `DeliveredAt` after 2xx | until ack the event must live somewhere in the system |
+| 2026-10-16 | On endpoint 500/timeout — automatic retry (not just a log) | logs are for people; retry is system behaviour, see TASK-005 |
+| 2026-10-16 | Dedup key = SHA256(webhookId + payload) | without webhookId the same payload to different webhooks would collapse into one key — user's decision |
+| 2026-10-16 | Dup response: `200` + original event id + duplicate flag | the client gets an idempotent answer and can query event status — user's decision |
+| 2026-10-16 | Redis-down during dedup: fail-open (pass through) | the PG unique index catches the dup on insert anyway — Redis is only a fast filter; fail-closed would cut availability with no correctness gain |
+| 2026-10-16 | Dedup order: insert into PG → then SET NX in Redis | the insert itself rejects dups via the index; closes the "SET succeeded, died before insert" edge |
+| 2026-10-16 | Dedup window TTL: 24h (configurable) | Stripe's idempotency keys live 24h; the window is the horizon of late client retries, not network delay |
+| 2026-10-17 | Insert-first confirmed by user | PG index = source of truth, Redis = fast-path cache |
+| 2026-10-17 | Redis-down → fail-open, confirmed | the PG index catches dups regardless; cost — extra insert attempts while Redis is down |
+| 2026-10-17 | Sweeper is mandatory | scans `Pending`, picks up "in PG but never reached the channel" (restart, overflow); gentle — batches + interval |
+| 2026-10-17 | Overflow: variant D with a ceiling | always insert into PG + 202; reject 503 only when `Pending` > threshold (config). PG = the real queue, channel = fast path. The ceiling protects the table from bloat |
+| 2026-10-17 | Channel capacity ~10k | buffer for producer/consumer skew; ~10s of burst with delivery stalled |
+| 2026-10-17 | Rate-limit delay and retry — ONE mechanism of deferred send | a sleeping worker blocks other events (head-of-line); a delay is a schedule, not a sleep |
+| 2026-10-17 | Backoff: max 5 attempts; base 1s, ×2, cap 5min — confirmed | user confirmed the defaults |
+| 2026-10-18 | Checkpoint TASK-002/003 — partial (delegated) | user correctly found fail-open, lease-by-UpdatedAt, retryable codes; the race is resolved by the PG index (not Redis) — answered by Devin; "died before SaveChanges" → receiver-side dup, no loss |
+| 2026-10-17 | TASK-004/005 — hands-on mode: Devin mentors only | learning tickets, pure algorithms |
+| 2026-10-19 | Checkpoint Q1 — correct; Q2 (why depth counts all statuses) — open, deferred | user's answers recorded honestly |
+| 2026-10-19 | TASK-006 endpoints delegated to Devin; DLQ semantics — user review | fatigue, explicit "do it yourself" |
+| 2026-10-19 | P-05 SignalR feed: worker publishes status after SaveChanges; feed errors are swallowed — observability must not block delivery | platform, delegated |
+| 2026-10-19 | D15 architectural style: modular monolith, Core/Infrastructure/Api; not microservices, not layered cake — rationale in architecture.md | user asked to "record why" |
+| 2026-10-19 | P-06 dashboard + `GET /stats`; vite proxy → :5269, no CORS; npm scripts via `node ...` because of a space in the path | platform, delegated |
+| 2026-10-20 | P-07 LoadGen (rps/burst/dup); dashboard in compose behind nginx proxy; P-02 closed without IRepository per D15 | platform, delegated |
+| 2026-10-21 | D16 bucket capacity = RateLimitPerSecond (one second of burst); jitter = equal (`delay/2 + rand(delay/2)`) | user's choice; equal is stabler — guaranteed lower half bound |
+| 2026-10-21 | Checkpoint: Q3/Q6/T1 talked through, partial — explanations recorded (atomic claim; dedup TTL vs PG-forever; ingest-dup vs send-dup) | user answered at 2am, recorded honestly |
+| 2026-10-24 | TASK-004 written by user — logic correct; fixed duplicate stub methods, epsilon at token boundary; tests delegated to Devin (6 green) | hands-on done |
+| 2026-10-24 | Enqueue race (Q3) fixed by atomic claim `Pending→InFlight` in ingest and sweeper; rollback on full channel | edge from guide.md |
+| 2026-10-24 | Limiter wired: `TokenBucketRateLimiter` (ConcurrentDictionary, D6/L1) + worker defers by wait via RetryScheduled (D7) | delegated |
+| 2026-10-24 | TASK-008 `ConsistentHashRing` implemented (delegated), not wired into the system — waits for multi-instance | reviewed 26.10 |
+| 2026-10-24 | `/metrics`: EngineMetrics counters + DB-derived (depth, dlq_live, ratios); `/health` → readiness PG+Redis | TASK-009 |
+| 2026-10-24 | D14 implemented: HMAC-SHA256 body signature (`X-Webhook-Signature`); worker sends `webhook.Secret`; `MockReceiver` in compose + signature logging; `Delivery:WorkerParallelism` | platform |
+| 2026-10-25 | Redis fail-open closed at the DI boundary: `abortConnect=false` — a dead Redis no longer kills ingest at resolution | guarantee |
+| 2026-10-25 | TASK-005 (delegated): `BackoffPolicy` exp·2^a + equal jitter + 5min cap + max 5; `HeapRetryScheduler` — versioned lazy deletion; worker: max-attempts → DLQ, schedule after SaveChanges; sweeper: heap fast-path + PG scan (truth) | defended by user 25–26.10 (S1–S5) |
+| 2026-10-25 | Dev model fixed: Kanban + XP solo (AGENTS) | process |
+| 2026-10-25 | `GET /webhooks`, `GET /events`, `GET /events/{id}` (+attempts), `DELETE /received` on MockReceiver — read side closed | platform |
+| 2026-10-17 | Non-retryable: 4xx (except 429), bad payload, deactivated webhook | rule: "would a retry change the answer?" no → don't retry |
+| 2026-10-17 | DLQ conditions: retries exhausted / non-retryable error / invalid payload post-accept / webhook deactivated | invalid at the door stays a 400, not DLQ |
+| 2026-10-17 | Replay bypasses dedup (the same key would be eaten by the filter) | status→Pending, attempt history kept as audit |
+| 2026-10-17 | MVP without client Idempotency-Key (content-hash); header — an evolution | user asked "who needs it" — clients with their own event ids; deferred |
+| 2026-10-25 | TASK-010 EXPLAIN on 4806 rows: due-scan and stale-scan both ride `IX_Events_Status_NextAttemptAt` (0.07ms/0.02ms); **L4 resolved — keep the full index**: a partial on (0,2) would break stale-scan into seq scan, and the 80kB→~2kB saving is negligible; a second partial = write amplification for no reason | delegated to Devin, accepted |
+| 2026-10-25 | depth `COUNT(Status IN 0,1,2)` — Index Only Scan over the live subtrees only (delivered rows sit in a different key branch) → cost bounded by live work, not table size; the earlier "hot COUNT" worry removed by data | delegated |
+| 2026-10-25 | `NextAttemptAt = CreatedAt` instead of NULL — deferred: OR+Filter in due-scan already rides the index at 0.07ms; the trick would give a clean range but costs the "null = now" semantics that already works | delegated, low value |
+| 2026-10-25 | `/stats` = Seq Scan + HashAggregate (0.7ms at 5k; ~300ms at 1M rows every 2s — a real growth point) | closed by `StatsCache` on 2026-10-26 |
+| 2026-10-26 | `StatsCache` (singleton, TTL 3s, SemaphoreSlim + double-check): `/stats` and `/metrics` share one snapshot → at most one seq-scan per poll tick instead of per request | platform, verified in full compose run |
+| 2026-10-26 | Full 5-service compose verified: event → api → PG → worker → mockreceiver over internal DNS with HMAC; LoadGen 1000@100rps → 804 delivered, 0 err; nginx proxies all routes incl. SignalR upgrade | P-03 done |
+| 2026-10-26 | Config tuned to local-optimal (not prod-recommended): Sweeper interval 10→2s so 1/2/4/8s backoff fires on plan; PendingThreshold 100k→10k so backpressure is observable locally; prod direction documented in guide.md | platform |
 
-## Карта границ: где дубль, где потеря (доказано живьём)
+## Failure-boundary map: where duplicates, where loss (proven live)
 
-Финальный критерий проекта — каждая строка подтверждена прогоном
-(доказательства: done-log таблица 9 сбоев, LoadGen 6000 событий).
+The project's final criterion — every row backed by a live run
+(evidence: done-log table of 9 failures, LoadGen ~6000 events).
 
-| Стадия | Дубль возможен? | Потеря возможна? | Механизм / страж | Доказательство |
+| Stage | Duplicate possible? | Loss possible? | Mechanism / guard | Evidence |
 | --- | --- | --- | --- | --- |
-| POST /events, PG упал | нет | **нет** — клиент получает 5xx, не 202 | честный отказ до accept | хаос #1: HTTP 500 |
-| POST /events, Redis упал | нет | нет | fail-open → PG unique `IdempotencyKey` ловит дубль | хаос #2: 2-й POST = duplicate без Redis |
-| Ack после commit, клиент не услышал ответ | **да** — клиент ретраит → наш дубль на входе | нет | клиент видит timeout, но событие в PG; ретрай клиента → `duplicate` ответ, не второе событие | T5 разобран |
-| Redis TTL истёк, тот же ключ | нет | нет | PG unique бессрочен (В8 — принято) | хаос #9: TTL=0 → всё равно duplicate |
-| Claim → канал (канал полон) | нет | нет | `Pending` остаётся в PG, sweeper добирает тиком | хаос #4: cap=1, 3/3 доставлены |
-| Воркер умер после claim, до send | нет | нет | lease `InFlightTimeout` → sweeper реклеймит → повторный enqueue | хаос #7 стадия reclaim |
-| Send успешен, ACK/статус не записан (крах) | **да** — reclaim → повторная отправка | нет | at-least-once: дубль легален, потеря — нет | В7: две строки attempt#1 живьём |
-| Медленный канал > lease (В7) | **да** — второй воркер отправляет параллельно | нет | принято как граница; починка — lease-version в scale-волне | хаос #7: attemptCount=2 на 3 send'а |
-| Ретрай в куче, процесс убит | нет | нет | `NextAttemptAt` в PG — истина; куча — ускоритель, ребилдится сканом | хаос #3: ретраи продолжились после kill |
-| Endpoint 500 всегда | нет | **нет — карантин, не потеря** | MaxAttempts → DLQ + `DeadLetterItem.Reason` | хаос #5: 5 попыток → DLQ |
-| Endpoint flap 500↔200 | да (ретрай = повторная отправка by design) | нет | equal-jitter backoff: шанс на 200 за 5 попыток | хаос #6: [500,200] → Delivered |
-| Replay из DLQ | по воле оператора (не авария) | нет | обход dedup, AttemptCount→0, история — аудит | хаос #8: повторный цикл доставки |
-| Клиентская повторная отправка с новым телом | нет | нет | другой content-hash = другой ключ = новое событие (корректно) | по построению |
+| POST /events, PG down | no | **no** — client gets a 5xx, not a 202 | honest refusal before accept | chaos #1: HTTP 500 |
+| POST /events, Redis down | no | no | fail-open → PG unique `IdempotencyKey` catches the dup | chaos #2: 2nd POST = duplicate with Redis dead |
+| Ack after commit, client never heard it | **yes** — client retries → a dup on our ingest | no | client sees a timeout, but the event is in PG; client retry → `duplicate` response, not a second event | T5 analysed |
+| Redis TTL expired, same key | no | no | PG unique is permanent (Q8 — accepted) | chaos #9: TTL=0 → still duplicate |
+| Claim → channel (channel full) | no | no | `Pending` stays in PG, sweeper picks it up next tick | chaos #4: cap=1, 3/3 delivered |
+| Worker died after claim, before send | no | no | `InFlightTimeout` lease → sweeper reclaim → re-enqueue | chaos #7 reclaim stage |
+| Send succeeded, ack/status never written (crash) | **yes** — reclaim → repeated send | no | at-least-once: a dup is legal, loss is not | Q7: two attempt#1 rows observed live |
+| Slow channel > lease (Q7) | **yes** — a second worker sends in parallel | no | accepted as a boundary; the fix — lease versioning in the scale wave | chaos #7: attemptCount=2 across 3 sends |
+| Retry in heap, process killed | no | no | `NextAttemptAt` in PG is truth; the heap is an accelerator, rebuilt by scan | chaos #3: retries continued after kill |
+| Endpoint always 500 | no | **no — quarantine, not loss** | MaxAttempts → DLQ + `DeadLetterItem.Reason` | chaos #5: 5 attempts → DLQ |
+| Endpoint flaps 500↔200 | yes (a retry is a repeated send by design) | no | equal-jitter backoff: a chance at 200 within 5 attempts | chaos #6: [500,200] → Delivered |
+| Replay from DLQ | by operator's will (not a failure) | no | bypasses dedup, AttemptCount→0, history kept as audit | chaos #8: second delivery cycle |
+| Client resends with a new body | no | no | different content-hash = different key = a new event (correct) | by construction |
 
-**Итог:** потери нет ни на одной стадии после accept (202) —
-единственный «отказ» до accept честно возвращает 5xx. Дубли —
-только на трёх названных границах и все они легальны по
-at-least-once. Единственный «грязный» дубль — В7 (задокументирован).
+**Bottom line:** no loss on any stage after accept (202) — the only
+"refusal" before accept honestly returns a 5xx. Duplicates live on
+exactly three named boundaries and all are legal under at-least-once.
+The only "dirty" dup is Q7 (documented).
 
-## Открытые вопросы
+## Open questions
 
-- С content-hash ключом «то же событие через 25ч» всё ещё ловится
-  PG-индексом. Хотим ли различать «повтор той же отправки» vs «новое
-  событие с тем же телом»? Нужен клиентский Idempotency-Key header —
-  эволюция, не MVP
-- ~~Отложенные ретраи: heap при рестарте~~ ✓ решено: PG-скан — истина,
-  heap — ускоритель (TASK-005)
-- ~~Подпись webhook'ов~~ ✓ сделано: `X-Webhook-Signature` (D14)
-- ~~**L4**~~ ✓ решено данными (2026-10-25): полный индекс держим —
-  оба горячих скана по нему едут; partial ломал бы stale-scan.
-  См. журнал выше
+- With a content-hash key, "the same event 25h later" is still caught
+  by the PG index. Do we want to distinguish "a resend of the same
+  submission" vs "a genuinely new event with the same body"? Needs a
+  client-supplied Idempotency-Key header — an evolution, not MVP
+- ~~Deferred retries: heap on restart~~ ✓ resolved: PG scan is truth,
+  heap is an accelerator (TASK-005)
+- ~~Webhook signing~~ ✓ done: `X-Webhook-Signature` (D14)
+- ~~**L4**~~ ✓ resolved by data (2026-10-25): keep the full index —
+  both hot scans ride it; a partial would break stale-scan.
+  See the journal above

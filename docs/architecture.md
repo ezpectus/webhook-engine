@@ -1,59 +1,59 @@
-# Notification & Webhook Engine — архитектура и спека
+# Notification & Webhook Engine — architecture & spec
 
-Real-time сервис доставки уведомлений (Webhooks, в перспективе Push/Email)
-с гарантией **at-least-once delivery**, экспоненциальными ретраями
-и rate limiting для сторонних API.
+A real-time notification delivery service (Webhooks, Push/Email in
+perspective) with **at-least-once delivery**, exponential retries
+and rate limiting for third-party APIs.
 
-Цель нагрузки: миллионы событий, пики ~1M событий/сек без падения
-(упор на backpressure, а не на реальную железную мощность).
+Load target: millions of events, ~1M events/sec peaks without falling
+(the emphasis is on backpressure, not on real iron capacity).
 
-## Стек
+## Stack
 
-| Слой | Технология |
+| Layer | Technology |
 | --- | --- |
 | Backend | .NET (C#), ASP.NET, `System.Threading.Channels`, `IAsyncEnumerable` |
-| Дедупликация / rate limit | Redis |
-| Персистентность | PostgreSQL (EF Core миграции) |
-| Real-time статус | SignalR |
-| Дашборд | React + TypeScript |
-| Инфра | docker-compose (app + redis + postgres) |
+| Deduplication / rate limit | Redis |
+| Persistence | PostgreSQL (EF Core migrations) |
+| Real-time status | SignalR |
+| Dashboard | React + TypeScript |
+| Infra | docker-compose (app + redis + postgres) |
 
-Mermaid-версии диаграмм: [diagrams/system.md](diagrams/system.md)
+Mermaid versions of the diagrams: [diagrams/system.md](diagrams/system.md)
 
-## Архитектурный стиль (зафиксировано, D15)
+## Architectural style (fixed, D15)
 
-**Модульный монолит.** Три проекта — по ответственности, не по слоям
-ради слоёв:
+**Modular monolith.** Three projects — split by responsibility, not by
+layers for layers' sake:
 
-| Проект | Что живёт | Зависит от |
+| Project | What lives there | Depends on |
 | --- | --- | --- |
-| `Core` | модели, абстракции (интерфейсы), чистые алгоритмы | ничего |
-| `Infrastructure` | адаптеры: EF/Postgres, Redis, HttpClient | Core |
-| `Api` | composition root: DI, эндпоинты, воркеры, хабы | оба |
+| `Core` | models, abstractions (interfaces), pure algorithms | nothing |
+| `Infrastructure` | adapters: EF/Postgres, Redis, HttpClient | Core |
+| `Api` | composition root: DI, endpoints, workers, hubs | both |
 
-**Почему именно так, а не иначе:**
+**Why this and not otherwise:**
 
-- **Не микросервисы.** Гарантия at-least-once держится на границах
-  «принял → записал → отправил → ack». Разнести их по сети = умножить
-  failure modes без причины: ни одна часть системы не требует
-  независимого деплоя или масштабирования прямо сейчас. Узкое место —
-  исходящий HTTP и Postgres, а не модульность процесса.
-- **Не трёхслойка / не Clean-на-6-проектов.** Core — единственная
-  «чистая» зона, и её чистота не декоративная: алгоритмы (bucket,
-  heap) тестируются без инфраструктуры вообще. Интерфейс создаём
-  только там, где есть реальная граница замены: dedup (Redis↔другой
-  кеш), queue, scheduler, limiter, feed. `IRepository` поверх EF
-  «потому что надо» — нет.
-- **Зависимости смотрят внутрь.** Infrastructure/Api знают Core;
-  Core не знает их. Проверяется тем, что Core собирается без
-  NuGet-зависимостей на инфраструктуру.
+- **Not microservices.** The at-least-once guarantee holds on the
+  boundaries "accepted → persisted → sent → acked". Spreading them
+  across the network multiplies failure modes for no reason: no part
+  of the system needs independent deployment or scaling right now.
+  The bottleneck is outbound HTTP and Postgres, not process
+  modularity.
+- **Not three-tier / not six-project Clean.** Core is the only "pure"
+  zone, and its purity is not decorative: the algorithms (bucket,
+  heap) are testable with zero infrastructure. An interface exists
+  only where a real replaceable boundary exists: dedup (Redis↔another
+  cache), queue, scheduler, limiter, feed. No `IRepository` over EF
+  "because you're supposed to".
+- **Dependencies point inward.** Infrastructure/Api know Core; Core
+  doesn't know them. Verified by Core building with no infra NuGets.
 
-**Куда может эволюционировать** (только при появлении потребности):
-несколько инстансов Api → Redis-реализация rate limiter'а, лидер-
-элект sweeper'а, consistent hashing (TASK-008). Каждый шаг —
-отдельное решение с обоснованием, не «на вырост».
+**Where it can evolve** (only when the need appears): multiple Api
+instances → Redis-backed rate limiter, sweeper leader election,
+consistent hashing (TASK-008). Each step is its own justified
+decision, not "built for growth".
 
-## Компоненты
+## Components
 
 ```
             ┌──────────┐   ┌────────────┐   ┌──────────────┐
@@ -78,68 +78,68 @@ events ───> │ Ingest   │─> │ Dedup      │─> │ Queue        �
                             └────────────┘
 ```
 
-- **Ingest API** — приём событий, валидация, выдача event id.
-- **Dedup** — Redis `SET NX` по SHA256-ключу события, окно дедупликации.
-- **Queue** — bounded `Channel`, backpressure-политика при переполнении.
-- **Dispatcher/workers** — пул воркеров, консистентное распределение
-  webhook'ов по узлам (consistent hashing) при горизонтальном скейле.
-- **Rate limiter** — token bucket на каждый webhook endpoint.
-- **Retry scheduler** — min-heap отложенных отправок, backoff + jitter.
-- **DLQ** — события, исчерпавшие ретраи; просмотр и replay через дашборд.
+- **Ingest API** — event intake, validation, event id issuance.
+- **Dedup** — Redis `SET NX` on the event's SHA256 key, dedup window.
+- **Queue** — bounded `Channel`, backpressure policy on overflow.
+- **Dispatcher/workers** — worker pool; consistent-hash webhook
+  distribution across nodes at horizontal scale.
+- **Rate limiter** — token bucket per webhook endpoint.
+- **Retry scheduler** — min-heap of deferred sends, backoff + jitter.
+- **DLQ** — events that exhausted retries; view + replay via dashboard.
 
-## Алгоритмы и структуры
+## Algorithms & structures
 
-- **Token bucket** — контроль RPS на каждый внешний webhook.
-- **Priority queue (min-heap)** — отложенные ретраи по `nextAttemptAt`.
-- **Consistent hashing** — распределение webhook-воркеров по узлам.
-- **SHA256 + Redis SET NX** — идемпотентность на приёме.
+- **Token bucket** — RPS control per external webhook.
+- **Priority queue (min-heap)** — deferred retries by `nextAttemptAt`.
+- **Consistent hashing** — webhook-worker distribution across nodes.
+- **SHA256 + Redis SET NX** — idempotency at ingest.
 
-## Гарантии доставки
+## Delivery guarantees
 
-- **At-least-once**: дубли возможны — дедуп на приёме + идемпотентные
-  ключи в payload; приёмник должен уметь переваривать повтор.
-- **Потеря недопустима**: событие считается доставленным только после
-  ack; до ack оно живёт в очереди/retry/DLQ.
-- Открытые вопросы границ (где именно может быть дубль/потеря) —
-  см. `PLAN.md`.
+- **At-least-once**: duplicates are possible — dedup at ingest +
+  idempotency keys in the payload; the receiver must tolerate a repeat.
+- **Loss is not allowed**: an event counts as delivered only after
+  ack; before ack it lives in the queue / retry / DLQ.
+- Open boundary questions (where exactly a dup/loss can occur) —
+  see `PLAN.md` (the proven boundary map lives there).
 
-## Схема БД (стадия 1, реализовано)
+## DB schema (stage 1, implemented)
 
 - `webhook_endpoints` — Url, Secret, RateLimitPerSecond, IsActive
 - `notification_events` — IdempotencyKey (unique), Payload (jsonb),
   Status, AttemptCount, NextAttemptAt, DeliveredAt;
-  индекс `(Status, NextAttemptAt)` — скан должных ретраев
-- `delivery_attempts` — история попыток: код ответа, ошибка, длительность
+  index `(Status, NextAttemptAt)` — due-retry scan
+- `delivery_attempts` — attempt history: response code, error, duration
 - `dead_letter_items` — Reason, DeadLetteredAt, ReplayedAt
 
-**Двойная защита от дублей:** Redis `SET NX` — быстрый фильтр (TTL-окно,
-ключи можно потерять при рестарте кеша); unique-индекс в PG — жёсткая
-граница: одинаковый `IdempotencyKey` не запишется дважды никогда.
-Первый слой — про скорость, второй — про корректность.
+**Double dup protection:** Redis `SET NX` is the fast filter (TTL
+window, keys can be lost on cache restart); the PG unique index is
+the hard boundary: the same `IdempotencyKey` never writes twice.
+First layer is about speed, second — about correctness.
 
-**Открытые вопросы схемы** (решаются в тикетах):
-- ~~Lease/ownership~~ — реализовано: `InFlight` + `UpdatedAt`, протухание
-  через sweeper (`InFlightTimeoutMinutes`). Края: гонка enqueue —
-  см. guide.md «Известные края»
-- Хранилище отложенных ретраев: сейчас — скан `NextAttemptAt` sweeper'ом;
-  in-memory heap придёт с TASK-005 (ускорение, PG остаётся истиной)
-- Что входит в `IdempotencyKey` определяет поведение «дубль после окна» —
-  решено: sha256(webhookId + payload), клиентский header — эволюция
+**Open schema questions** (resolved in tickets):
+- ~~Lease/ownership~~ — implemented: `InFlight` + `UpdatedAt`, expiry
+  via sweeper (`InFlightTimeoutMinutes`). Edges: enqueue race —
+  see guide.md "Known edges"
+- Deferred-retry storage: currently `NextAttemptAt` swept by the
+  sweeper; in-memory heap came with TASK-005 (acceleration, PG stays truth)
+- What goes into `IdempotencyKey` defines "dup after the window"
+  behaviour — resolved: sha256(webhookId + payload); client header
+  is an evolution
 
-## Роадмап (стадии)
+## Roadmap (stages)
 
-1. **Каркас** ✓: ASP.NET скелет, Postgres-схема, docker-compose
-2. **Приём** ✓: ingest + dedup (insert-first: PG-индекс + Redis-кеш)
-3. **Очередь** ✓: bounded channel + политика «PG = очередь, reject при
-   Pending > потолка» + sweeper
-4. **Доставка** ⏳: workers + HttpClientFactory ✓; rate limiter — TASK-004
-5. **Ретраи** ⏳: flat-delay заглушка стоит; min-heap + backoff/jitter —
-   TASK-005 (руками)
-6. **DLQ**: семантика ✓ (есть в воркере); replay endpoint — TASK-006
-7. **Наблюдаемость**: SignalR-фид + React-дашборд — P-05/P-06
-8. **Хаос**: тесты сбоев (падение воркера до/после ack и т.п.)
-9. **Нагрузка**: генератор «миллион событий», замеры
-10. **Подпись**: HMAC-SHA256 подпись webhook'ов по `Secret`
-    (заголовок `X-Webhook-Signature`, как `X-Hub-Signature` у GitHub)
+1. **Skeleton** ✓: ASP.NET scaffold, Postgres schema, docker-compose
+2. **Ingest** ✓: intake + dedup (insert-first: PG index + Redis cache)
+3. **Queue** ✓: bounded channel + "PG = queue, 503 past the ceiling"
+   policy + sweeper
+4. **Delivery** ✓: workers + HttpClientFactory; rate limiter — TASK-004
+5. **Retries** ✓: min-heap + backoff/jitter — TASK-005
+6. **DLQ** ✓: semantics in worker; replay endpoint — TASK-006
+7. **Observability** ✓: SignalR feed + React dashboard — P-05/P-06
+8. **Chaos** ✓: 9 failures reproduced live — TASK-007
+9. **Load** ✓: LoadGen runs (~6000 events, dup rate verified)
+10. **Signing** ✓: HMAC-SHA256 per `Secret`
+    (`X-Webhook-Signature`, like GitHub's `X-Hub-Signature`)
 
-Правила сплита (что пишет человек, что — агент) — в `AGENTS.md`.
+Split rules (what the human writes vs the agent) — `AGENTS.md`.

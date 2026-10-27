@@ -1,112 +1,117 @@
-# Task guide — концепции для ручных тасок
+# Task guide — concepts behind the hands-on tickets
 
-Для чтения в усталом режиме. Кода тут нет — только понимание,
-которое понадобится, когда сядешь писать руками.
+For tired-mode reading. No code here — just the understanding you'll
+need when you sit down to write it yourself.
 
 ---
 
 ## TASK-004 · Token bucket
 
-### Аналогия
+### Analogy
 
-Ведро, в которое с постоянной скоростью капают жетоны. Ведро вмещает
-максимум `capacity` штук — лишние просто проливаются мимо и теряются.
-Каждая отправка webhook'а стоит **1 жетон**:
+A bucket that tokens drip into at a constant rate. The bucket holds at
+most `capacity` tokens — the extra ones just spill over and are lost.
+Every webhook send costs **1 token**:
 
-- жетон есть → взял, шлёшь сразу;
-- жетонов нет → ждёшь пока накапает следующий.
+- token present → take it, send right away;
+- no tokens → wait for the next one to drip in.
 
-### Зачем ДВА параметра, а не один «RPS»
+### Why TWO parameters, not just "RPS"
 
-- `refillPerSecond` — устойчивый лимит в среднем (то, что API гарантирует
-  длительно: «не больше 10/сек»).
-- `capacity` — допустимый всплеск. Пример: лимит 10/сек, capacity 30.
-  Клиент молчал 3 секунды → накопил 30 → может разом выпустить 30
-  запросов, а потом снова по 10/сек. Без capacity даже честный клиент
-  не смог бы сделать 11 запросов подряд ни в каком мире.
+- `refillPerSecond` — the sustained average limit (what the API
+  guarantees long-term: "no more than 10/sec").
+- `capacity` — the allowed burst. Example: limit 10/sec, capacity 30.
+  A client quiet for 3 seconds accumulates 30 → can fire 30 requests
+  at once, then back to 10/sec. Without capacity even an honest client
+  could never make 11 requests in a row, in any world.
 
-Поэтому `capacity` в нашем проекте обычно берут = `RateLimitPerSecond`
-(секунда всплеска) или k×RPS — решение твоё, зафиксируй.
+That's why in this project `capacity` is usually `RateLimitPerSecond`
+(one second of burst) or k×RPS — your call, record it.
 
-### Ключевая идея реализации — ленивое пополнение
+### The key implementation idea — lazy refill
 
-Не нужен таймер, который «капает». При каждом обращении к bucket:
+No "dripping" timer needed. On every bucket access:
 
 ```
 tokens = min(capacity, tokens + elapsedSeconds * refillPerSecond)
 ```
 
-где elapsed — время с прошлого обращения. Одно поле `_lastRefill`,
-одна формула. Всё.
+where elapsed = time since the last access. One field `_lastRefill`,
+one formula. That's it.
 
-### Время — снаружи, не внутри
+### Time comes from outside, not inside
 
-Класс не должен звать `DateTimeOffset.UtcNow` сам. Принимай
-`TimeProvider` в конструктор (`TimeProvider.System` дефолтом).
-Иначе: тест «подожди 200мс» будет ждать реальные 200мс, а тесты
-должны летать и не флакать. .NET 8: `TimeProvider` в BCL,
-для тестов — `FakeTimeProvider` (пакет `Microsoft.Extensions.TimeProvider.Testing`).
+The class must not call `DateTimeOffset.UtcNow` itself. Take a
+`TimeProvider` in the constructor (`TimeProvider.System` by default).
+Otherwise a "wait 200ms" test waits real 200ms — tests should fly and
+never flake. .NET 8: `TimeProvider` is in the BCL; for tests —
+`FakeTimeProvider` (`Microsoft.Extensions.TimeProvider.Testing`).
 
 ### Token bucket vs leaky bucket
 
-- **Bucket:** накопил — выпустил пачкой. Разрешает всплески до capacity.
-- **Leaky:** исходящая скорость строго фиксированная, всплесков нет
-  вообще, очередь сглаживается.
+- **Bucket:** accumulate — release in a batch. Allows bursts up to
+  capacity.
+- **Leaky:** outbound rate strictly fixed, no bursts at all, the
+  queue gets smoothed.
 
-Для внешних API обычно bucket: их лимиты считаются «N за окно», и
-всплеск в пределах окна не вредит. Leaky нужен там, где вреден сам
-факт частых запросов.
+For external APIs bucket is the norm: their limits count "N per
+window", and a burst inside the window is harmless. Leaky is needed
+where the mere frequency of requests is harmful.
 
-### Подводные камни (проверю на ревью)
+### Pitfalls (I'll check at review)
 
-- несколько воркеров дёргают один bucket одновременно → `tokens` уходит
-  в минус без синхронизации;
-- refill без `min(capacity)` → ведро бездонное;
-- `refillPerSecond <= 0` → что произойдёт? (подумай, бросать ли
-  исключение в конструкторе);
-- `TimeUntilAvailable` при `tokens >= 1` — должен быть `Zero`, не «чуть-чуть».
+- several workers hitting one bucket at once → `tokens` goes negative
+  without synchronization;
+- refill without `min(capacity)` → bottomless bucket;
+- `refillPerSecond <= 0` → what happens? (think about throwing in
+  the constructor);
+- `TimeUntilAvailable` at `tokens >= 1` — must be `Zero`, not
+  "a little bit".
 
 ---
 
 ## TASK-005 · Retry scheduler
 
-### Три идеи, из которых он собран
+### The three ideas it's built from
 
-1. **Exp backoff** — `delay = base * 2^attempt` (1с, 2с, 4с, 8с, ...).
-   Упавший endpoint не долбим сразу: пауза растёт, даём ему встать.
-   Без `cap` 2^n улетает в часы — поэтому потолок 5 минут (D9).
+1. **Exp backoff** — `delay = base * 2^attempt` (1s, 2s, 4s, 8s, ...).
+   A down endpoint shouldn't be hammered immediately: the pause grows,
+   giving it time to stand back up. Without a `cap` 2^n flies into
+   hours — hence the 5-minute ceiling (D9).
 
-2. **Jitter** — случайный разброс задержки. Представь: 1000 событий
-   упали одновременно (endpoint лёг у всех в одну секунду). Без jitter
-   все 1000 придут на ретрай тоже одновременно — вторая волна убьёт
-   только что вставший endpoint (thundering herd). Jitter размазывает
-   толпу по коридору. Варианты: `rand(delay)` (full) или
-   `delay/2 + rand(delay/2)` (equal) — выбор твой.
+2. **Jitter** — random spread on the delay. Picture it: 1000 events
+   failed simultaneously (the endpoint went down for everyone at the
+   same second). Without jitter all 1000 come back for retry at the
+   same time too — the second wave kills the endpoint that just got
+   up (thundering herd). Jitter smears the crowd across a corridor.
+   Options: `rand(delay)` (full) or `delay/2 + rand(delay/2)` (equal).
 
-3. **Min-heap по due-time** — `PriorityQueue<Guid, DateTimeOffset>`:
-   ближайший по времени ретрай наверху, извлечение O(log n).
+3. **Min-heap by due-time** — `PriorityQueue<Guid, DateTimeOffset>`:
+   the soonest retry sits on top, extraction is O(log n).
 
-### Самое важное для понимания
+### The single most important thing to understand
 
-**Heap — ускоритель, PG — истина.** Куча в памяти при рестарте
-исчезает — и ничего: `NextAttemptAt` записан в таблице, sweeper уже
-умеет его сканить. Поэтому реализация обязана держать PG-поле и кучу
-в согласии, а recovery — бесплатный, из таблицы.
+**The heap is an accelerator; PG is the truth.** The in-memory heap
+disappears on restart — and nothing bad happens: `NextAttemptAt` is
+written in the table, and the sweeper already knows how to scan it.
+So the implementation must keep the PG field and the heap in
+agreement — and recovery is free, from the table.
 
-### Edge cases до кода
+### Edge cases before coding
 
-- `PriorityQueue` не умеет Remove — отмена/перепланировка делается
-  лениво: извлёк due-элемент → сверил с актуальным `NextAttemptAt` в
-  PG → не совпало (кто-то перепланировал/отменил) → выкинул запись.
-- max-attempts проверяется ДО назначения ретрая, не после записи в DLQ.
-- Jitter должен быть разным у разных событий — общий `Random.Shared`
-  это даёт, а вот одинаковый seed у всех — нет.
+- `PriorityQueue` has no Remove — cancel/reschedule is lazy: pop a
+  due entry → compare with the current `NextAttemptAt` in PG →
+  mismatch (someone rescheduled/cancelled) → drop the entry.
+- max-attempts is checked BEFORE scheduling a retry, not after
+  writing to the DLQ.
+- Jitter must differ per event — shared `Random.Shared` gives that;
+  one identical seed for all does not.
 
 ---
 
-## Общее для обеих тасок
+## Common to both tickets
 
-- Классы живут в `Core` — чистые алгоритмы без зависимостей.
-- Тесты пишешь сам: тест = твоя спецификация поведения.
-- Застрял — лесенка: «намёк» → «вопрос» → «псевдокод». Кода от меня
-  не будет, правило «руками».
+- Classes live in `Core` — pure algorithms with zero dependencies.
+- You write the tests yourself: a test is your behavioural spec.
+- Stuck — ladder: "hint" → "question" → "pseudocode". No code from me
+  under the hands-on rule.
