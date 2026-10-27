@@ -138,7 +138,7 @@ First layer is about speed, second — about correctness.
 6. **DLQ** ✓: semantics in worker; replay endpoint — TASK-006
 7. **Observability** ✓: SignalR feed + React dashboard — P-05/P-06
 8. **Chaos** ✓: 9 failures reproduced live — TASK-007
-9. **Load** ✓: LoadGen runs (~6000 events, dup rate verified)
+9. **Load** ✓: three LoadGen runs (2,055 / ~4,800 / 803 accepted; dup rate verified)
 10. **Signing** ✓: HMAC-SHA256 per `Secret`
     (`X-Webhook-Signature`, like GitHub's `X-Hub-Signature`)
 

@@ -35,7 +35,7 @@ After the write it is our responsibility until `Delivered` or
 | HTTP ingest → validation | repeated client POST | no — without a 202 the event is "not accepted", the client retries | loss only counts after acceptance |
 | Dedup (Redis SET NX) | yes — after TTL window expires or with a different key | on Redis-down: depends on fail-open/fail-closed policy | Redis is a fast filter, not truth |
 | PG write | no — unique index on IdempotencyKey | edge: SET NX succeeded but insert didn't → client retry is cut as a dup while no row exists (resolved: insert-first) | the index is the hard boundary |
-| Channel (in-memory) | no | yes — but the event is already in PG, recovered via Status=Pending | queue is transport, not storage |
+| Channel (in-memory) | no | no — the channel item can be lost, but the event is already in PG; only delayed until the sweeper picks up `Status=Pending` | queue is transport, not storage |
 | Worker → send | yes — endpoint got it, worker died before writing ack → retry | no — a failure goes to retry | legitimate at-least-once duplicate |
 | Retry heap | no | on restart if heap were memory-only | PG scan is truth; heap is an accelerator |
 | DLQ | replay can produce a dup (acceptable) | no — terminal, but queryable and replayable | quarantine, not a trash bin |
@@ -108,7 +108,8 @@ After the write it is our responsibility until `Delivered` or
 ## Failure-boundary map: where duplicates, where loss (proven live)
 
 The project's final criterion — every row backed by a live run
-(evidence: done-log table of 9 failures, LoadGen ~6000 events).
+(evidence: done-log table of 9 failures; three LoadGen runs —
+2,055 / ~4,800 / 803 accepted events).
 
 | Stage | Duplicate possible? | Loss possible? | Mechanism / guard | Evidence |
 | --- | --- | --- | --- | --- |
@@ -119,7 +120,7 @@ The project's final criterion — every row backed by a live run
 | Claim → channel (channel full) | no | no | `Pending` stays in PG, sweeper picks it up next tick | chaos #4: cap=1, 3/3 delivered |
 | Worker died after claim, before send | no | no | `InFlightTimeout` lease → sweeper reclaim → re-enqueue | chaos #7 reclaim stage |
 | Send succeeded, ack/status never written (crash) | **yes** — reclaim → repeated send | no | at-least-once: a dup is legal, loss is not | Q7: two attempt#1 rows observed live |
-| Slow channel > lease (Q7) | **yes** — a second worker sends in parallel | no | accepted as a boundary; the fix — lease versioning in the scale wave | chaos #7: attemptCount=2 across 3 sends |
+| Slow channel > lease (Q7) | **yes** — a second worker sends in parallel | no | accepted as a boundary; the fix — lease versioning (hands-on task H-3) | chaos #7: attemptCount=2 across 3 sends |
 | Retry in heap, process killed | no | no | `NextAttemptAt` in PG is truth; the heap is an accelerator, rebuilt by scan | chaos #3: retries continued after kill |
 | Endpoint always 500 | no | **no — quarantine, not loss** | MaxAttempts → DLQ + `DeadLetterItem.Reason` | chaos #5: 5 attempts → DLQ |
 | Endpoint flaps 500↔200 | yes (a retry is a repeated send by design) | no | equal-jitter backoff: a chance at 200 within 5 attempts | chaos #6: [500,200] → Delivered |
@@ -127,9 +128,12 @@ The project's final criterion — every row backed by a live run
 | Client resends with a new body | no | no | different content-hash = different key = a new event (correct) | by construction |
 
 **Bottom line:** no loss on any stage after accept (202) — the only
-"refusal" before accept honestly returns a 5xx. Duplicates live on
-exactly three named boundaries and all are legal under at-least-once.
-The only "dirty" dup is Q7 (documented).
+"refusal" before accept honestly returns a 5xx. Failure-caused
+duplicates live on three boundaries — client retry after a lost
+ack, crash between send and ack write, slow channel past the lease
+(Q7) — all legal under at-least-once. Flap retries and DLQ replay are
+repeated sends by design, not failures. The only "dirty" dup is Q7
+(documented).
 
 ## Open questions
 

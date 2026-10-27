@@ -111,8 +111,8 @@ within seconds. The prod direction is in the last column.
 - **Q7 — parallel dup via a slow channel**: backlog > 5 min →
   InFlight expires → reclaim → second enqueue → two workers send
   concurrently. The dup is legal; `AttemptCount` loses an increment
-  (last-write-wins). Fix with lease-versioning or document — accepted
-  as a boundary; fix queued in the scale wave
+  (last-write-wins). Accepted and documented as a boundary; the
+  lease-versioning fix is optional hands-on task H-3 in `tasks.md`
 - In-memory limiter and heap are single-instance (scale wave: Redis +
   leader election)
 - `AttemptCount` is not protected by a concurrency token — see Q7

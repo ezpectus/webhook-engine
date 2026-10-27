@@ -2,7 +2,8 @@
 
 As of 2026-10-26. The full delivery loop is implemented, wired, and
 **verified live on the containerized stack** — 9 chaos failures
-reproduced, ~6000 events through LoadGen, zero loss after accept.
+reproduced, three LoadGen runs (2,055 / ~4,800 / 803 accepted),
+zero loss after accept.
 Order below is by dependencies, not importance.
 
 ## Blocking now

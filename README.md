@@ -55,7 +55,8 @@ tools/MockReceiver/            test webhook receiver with chaos modes (500/429/s
 tests/
   WebhookEngine.Tests          unit + chaos tests
 docs/                          architecture spec, task backlog, diagrams
-  guides/                      concept guides (RU): hands-on tasks, stack Q&A
+  guides/                      concept guides (EN): hands-on tasks, stack Q&A
+  ru/, guides/ru/              Russian originals of the translated docs
 PLAN.md                        data flow map + decision journal (ADR-style)
 ```
 
@@ -93,11 +94,12 @@ token bucket → signed send → backoff/jitter retries → DLQ + replay.
 
 **Proven live:** 9 chaos failures reproduced on the running system
 (PG/Redis down, restart mid-retry, full channel, flapping endpoint,
-lease expiry mid-send) — every guarantee held. LoadGen ~6000 events,
-zero loss after accept. The evidence-backed duplicate/loss map lives
+lease expiry mid-send) — every guarantee held. Three LoadGen runs
+(2,055 / ~4,800 / 803 accepted events, duplicates mixed in) — zero
+loss after accept. The evidence-backed duplicate/loss map lives
 in [PLAN.md](PLAN.md#failure-boundary-map-where-duplicates-where-loss-proven-live).
 
-Remaining: English docs sweep (TASK-011), optional scale wave
+Remaining: optional hands-on tasks (H-1..H-3) and the scale wave
 (Redis-backed limiter, leader election, multi-instance). See
 [docs/tasks.md](docs/tasks.md) for the backlog and
 [docs/next.md](docs/next.md) for the construction queue.
