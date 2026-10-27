@@ -28,6 +28,13 @@ public static class Endpoints
     {
         if (string.IsNullOrWhiteSpace(req.Url) || !Uri.TryCreate(req.Url, UriKind.Absolute, out _))
             return Results.BadRequest(new { error = "valid url required" });
+        // Фикс ревью: rate <= 0 валиден на входе, но ломается в глубине —
+        // TokenBucket бросал бы ArgumentOutOfRangeException при каждой
+        // отправке → событие прыгало InFlight↔Pending вечно (crash-loop,
+        // дубли-фон). Невалидное отсекаем на границе, как кривой URL.
+        // Было: RateLimitPerSecond = req.RateLimitPerSecond ?? 10 — без проверки.
+        if (req.RateLimitPerSecond is <= 0)
+            return Results.BadRequest(new { error = "rateLimitPerSecond must be > 0" });
 
         var hook = new WebhookEndpoint
         {

@@ -28,7 +28,12 @@ public sealed class WebhookSender(HttpClient http)
                 content.Headers.Add("X-Webhook-Signature", $"sha256={Convert.ToHexString(mac).ToLowerInvariant()}");
             }
 
-            var resp = await http.PostAsync(url, content, ct);
+            // Фикс ревью: response обязан быть using'ом. Недиспознутый
+            // HttpResponseMessage держит соединение в пуле до GC — на
+            // высоком RPS пул исчерпывается и новые запросы ждут сокет.
+            // Было: var resp = await http.PostAsync(url, content, ct);
+            //   — работает на 100 rps, умирает на 1000+.
+            using var resp = await http.PostAsync(url, content, ct);
             var code = (int)resp.StatusCode;
 
             if (resp.IsSuccessStatusCode)
