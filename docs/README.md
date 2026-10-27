@@ -6,6 +6,7 @@
 | `guide.md` | onboarding to the **real code**: event path, statuses, boundary map, config | first file after README |
 | `tasks.md` | live backlog — only `todo`/`review` | "what's next" |
 | `done-log.md` | archive of closed tasks with files and commits | "what's already done" |
+| `incidents.md` | review findings: before/after code, why it was broken | "show me real bugs you fixed" |
 | `diagrams/system.md` | mermaid diagrams of components and data flow | the visual picture |
 | `next.md` | construction queue — what's next and why | planning |
 | `guides/task_guide.md` | concepts behind the hands-on tasks (bucket, heap) without code | before TASK-004/005 |
