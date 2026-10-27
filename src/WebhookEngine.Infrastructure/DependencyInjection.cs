@@ -29,6 +29,12 @@ public static class DependencyInjection
             ConnectionMultiplexer.Connect(
                 ConfigurationOptions.Parse($"{redis},abortConnect=false")));
 
+        // Явная регистрация TimeProvider: эндпоинтам нужен инжектируемый
+        // «now» для тестируемого бакета времени в dedup-ключе (H-1).
+        // Если .NET-хост уже зарегистрировал его — последняя запись
+        // та же, безвредно.
+        services.AddSingleton(TimeProvider.System);
+
         services.AddSingleton<IDeduplicationStore, RedisDeduplicationStore>();
         services.AddSingleton<IEventQueue, EventQueue>();
         services.AddSingleton<IWebhookRateLimiter, RateLimiting.TokenBucketRateLimiter>();

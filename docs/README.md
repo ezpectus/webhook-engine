@@ -12,6 +12,7 @@
 | `guides/task_guide.md` | concepts behind the hands-on tasks (bucket, heap) without code | before TASK-004/005 |
 | `guides/task004_walkthrough.md` | step-by-step TokenBucket path | during TASK-004 |
 | `guides/task005_walkthrough.md` | step-by-step RetryScheduler path | during TASK-005 |
+| `guides/h1_walkthrough.md` | step-by-step H-1 dedup-window path | during H-1 |
 | `guides/concepts.md` | "what, why, when": CORS, CQRS, pattern heuristics | background reading |
 | `guides/open_questions.md` | all open questions: reviews, decisions, trainer | answer by voice when there's time |
 
