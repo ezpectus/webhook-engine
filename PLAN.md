@@ -104,6 +104,7 @@ After the write it is our responsibility until `Delivered` or
 | 2026-10-26 | `StatsCache` (singleton, TTL 3s, SemaphoreSlim + double-check): `/stats` and `/metrics` share one snapshot → at most one seq-scan per poll tick instead of per request | platform, verified in full compose run |
 | 2026-10-26 | Full 5-service compose verified: event → api → PG → worker → mockreceiver over internal DNS with HMAC; LoadGen 1000@100rps → 804 delivered, 0 err; nginx proxies all routes incl. SignalR upgrade | P-03 done |
 | 2026-10-26 | Config tuned to local-optimal (not prod-recommended): Sweeper interval 10→2s so 1/2/4/8s backoff fires on plan; PendingThreshold 100k→10k so backpressure is observable locally; prod direction documented in guide.md | platform |
+| 2026-10-28 | H-1 design locked (user dictation): `TimeProvider` into `IngestEvent`; **rolling** dedup = Redis `SET NX EX window` on `sha256(wh+payload)` (rolling by TTL from first sight) + PG backstop `sha256(wh+payload+bucket)` (unique index can't be time-relative); `WindowHours<=0` → clamp to 1; `bucket` as `ComputeKey` param (`long?` — null gives the Redis content key). Open: Redis-hit path needs the original `eventId` — value-in-Redis vs `ContentHash` column, picked at write time | user's choice; rolling chosen over fixed to close the boundary straddle |
 
 ## Failure-boundary map: where duplicates, where loss (proven live)
 
