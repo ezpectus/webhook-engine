@@ -11,7 +11,7 @@
 
 ## 2026-10-28 — платформа под H-3 + гигиена [D]
 
-### `pending` — `ClaimVersion` миграция + StatsCache + .gitattributes
+### `975d00f` — `ClaimVersion` миграция + StatsCache + .gitattributes
 - `NotificationEvent` + `ClaimVersion int` — колонка под H-3
   (lease-versioning); миграция `AddEventClaimVersion` сгенерирована
 - `StatsCache` — `delivered` берётся из `byStatus` словаря, -1 запрос

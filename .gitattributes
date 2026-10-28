@@ -1,6 +1,27 @@
 # Normalize line endings: text files get CRLF in the working copy on
 # Windows but are stored as LF in the repo — kills the "LF will be
 # replaced by CRLF" warning spam and whole-file diffs.
+# Keep common binary files away from the text=auto heuristic to prevent
+# corruption (embedded images, fonts, archives, native libs).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.eot binary
+*.otf binary
+*.pdf binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.mp3 binary
+*.mp4 binary
 * text=auto
 *.cs text eol=crlf
 *.csproj text eol=crlf
