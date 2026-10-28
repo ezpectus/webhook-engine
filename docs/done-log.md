@@ -20,7 +20,8 @@
 | **P-09** HMAC подпись | `X-Webhook-Signature: sha256=<hex>` по `WebhookEndpoint.Secret` (D14); MockReceiver логирует подпись | `8d6b34d` | done |
 | **P-10** MockReceiver | `tools/MockReceiver`: `?mode=ok|500|429|slow|flap|drop`, `GET /received`; compose-сервис :5005 | `47df4b5` `8d6b34d` | done |
 | **P-11** Параллельные воркеры | `Delivery:WorkerParallelism` (4): N читателей канала | `47df4b5` | done |
-| **TASK-002** Dedup приём | insert-first, `23505`→duplicate, fail-open Redis | `c781b8c` | `review` — чекпоинты частично |
+| **TASK-001** Data flow и карта границ | поток приём→DLQ в PLAN.md + карта «дубль/потеря» по стадиям, доказана хаосом | `8cd2c8a` | `review` — вопросы закрыты голосом (Q1 19.10; дубль-приём/отправка 28.10); финал — прогон карты |
+| **TASK-002** Dedup приём | insert-first, `23505`→duplicate, fail-open Redis | `c781b8c` | `review` — вопросы закрыты голосом (fail-open/lease/коды 18.10; «после окна» → H-1 28.10); финал — прогон карты |
 | **TASK-003** Очередь | bounded channel + потолок (D3) + sweeper/lease; гонка В3 починена | `9da2bec` `0829b37` | done |
 | **/stats кэш** | `StatsCache` (singleton, TTL 3с, SemaphoreSlim) — `/stats` и `/metrics` делят один снапшот: 4 агрегатных запроса → ≤1 раз в 3с вместо seq-scan на каждый полл дашборда (пункт из scale-волны, TASK-010 находка) | `—` | done |
 | **TASK-005** Retry scheduler | `BackoffPolicy` (base·2^a, cap 5мин, equal jitter, max 5) + `HeapRetryScheduler` (версионный lazy deletion, TimeProvider); воркер: ComputeDelay + max→DLQ + schedule после SaveChanges; sweeper: heap fast-path + PG-скан. Защита S1–S5 подтверждена голосом; проверено живьём (хаос #3/#5) | `633e8e7` | done |
