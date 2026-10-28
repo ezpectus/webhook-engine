@@ -1,4 +1,4 @@
-# H-1 walkthrough — honest dedup window (time bucket in the key)
+ H-1 walkthrough — honest dedup window (time bucket in the key)
 
 Hands-on task. This doc lays out the path; the implementation is
 yours. No code below. Ticket: `docs/tasks.md` → H-1.

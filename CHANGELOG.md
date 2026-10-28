@@ -9,6 +9,24 @@
 
 ---
 
+## 2026-10-28 — платформа под H-3 + гигиена [D]
+
+### `pending` — `ClaimVersion` миграция + StatsCache + .gitattributes
+- `NotificationEvent` + `ClaimVersion int` — колонка под H-3
+  (lease-versioning); миграция `AddEventClaimVersion` сгенерирована
+- `StatsCache` — `delivered` берётся из `byStatus` словаря, -1 запрос
+  на рефреш (нит из ревью 26.10)
+- `.gitattributes` — нормализация eol, конец CRLF-спаму в диффах
+- 40/40
+
+## 2026-10-27 — инциденты и подготовка [docs]
+
+- `b78b4ef` — `docs/guides/h1_walkthrough.md` (путь H-1 без кода);
+  `TimeProvider.System` в DI для инжектируемого «now» в эндпоинтах [D+docs]
+- `ada0859` — `docs/incidents.md` — разбор ревью-находок с до/после
+  кодом (I-1..I-4) [docs]
+- `bef7c13` — записи ревью в done-log (таблица находок) + CHANGELOG [docs]
+
 ## 2026-10-26 — ревью-фиксы [D]
 
 ### `158fdfa` — края из ревью: backoff + replay-ordering

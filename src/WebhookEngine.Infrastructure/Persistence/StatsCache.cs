@@ -49,7 +49,10 @@ public sealed class StatsCache
             var depth = await db.Events.CountAsync(
                 e => e.Status != Core.Models.EventStatus.Delivered &&
                      e.Status != Core.Models.EventStatus.DeadLettered, ct);
-            var delivered = await db.Events.CountAsync(e => e.Status == Core.Models.EventStatus.Delivered, ct);
+            // delivered берём из byStatus — отдельный COUNT был бы лишним
+            // сканом (ревью 26.10): значение уже есть в словаре группировки.
+            var delivered = byStatus.GetValueOrDefault(
+                Core.Models.EventStatus.Delivered.ToString(), 0);
 
             _cached = new Snapshot(byStatus, dlqLive, depth, delivered);
             _refreshedAt = _time.GetUtcNow();
