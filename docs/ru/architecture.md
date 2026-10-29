@@ -18,7 +18,7 @@ Real-time сервис доставки уведомлений (Webhooks, в п�
 | Дашборд | React + TypeScript |
 | Инфра | docker-compose (app + redis + postgres) |
 
-Mermaid-версии диаграмм: [diagrams/system.md](diagrams/system.md)
+Mermaid-версии диаграмм: [diagrams/system.md](../diagrams/system.md)
 
 ## Архитектурный стиль (зафиксировано, D15)
 

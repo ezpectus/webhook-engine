@@ -63,12 +63,20 @@ PLAN.md                        data flow map + decision journal (ADR-style)
 ## Getting started
 
 ```bash
-docker compose -p webhook-engine up        # api + postgres + redis
-# or run deps only and the API locally:
+# Full stack — one command, no manual steps (EF migrations run at startup):
+docker compose -p webhook-engine up --build
+#   api :8080 · dashboard :3000 · mockreceiver :5005 · postgres :5433 · redis :6379
+
+# or run deps only and the API + dashboard locally:
 docker compose -p webhook-engine up -d postgres redis
 dotnet run --project src/WebhookEngine.Api # http://localhost:5269
 cd dashboard && npm install && npm run dev # http://localhost:5173
 ```
+
+Sanity check: `curl localhost:8080/health` → `{"status":"ok",...}`.
+To see the failure paths live, point a webhook at
+`http://localhost:5005/hook?mode=500|429|slow|flap|drop` and watch the
+dashboard.
 
 ## API surface
 

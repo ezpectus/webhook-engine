@@ -7,3 +7,12 @@ docs/
 *.md
 .dockerignore
 docker-compose.yml
+# Frontend is a separate compose service with its own build context —
+# keep it (and any other JS artifacts) out of the API image context.
+dashboard/
+tools/
+**/node_modules/
+**/dist/
+.vs/
+.vscode/
+.idea/
