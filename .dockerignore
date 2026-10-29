@@ -7,10 +7,10 @@ docs/
 *.md
 .dockerignore
 docker-compose.yml
-# Frontend is a separate compose service with its own build context —
-# keep it (and any other JS artifacts) out of the API image context.
-dashboard/
-tools/
+# JS build artifacts (the big ones) never belong in the API image.
+# dashboard/ and tools/ have their own compose build contexts with
+# their own .dockerignore files; leave source files accessible here
+# so alternative `docker build -f ...` invocations from root still work.
 **/node_modules/
 **/dist/
 .vs/

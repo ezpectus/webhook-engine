@@ -75,8 +75,8 @@ cd dashboard && npm install && npm run dev # http://localhost:5173
 
 Sanity check: `curl localhost:8080/health` → `{"status":"ok",...}`.
 To see the failure paths live, point a webhook at
-`http://localhost:5005/hook?mode=500|429|slow|flap|drop` and watch the
-dashboard.
+`http://localhost:5005/hook?mode=<one-of: 500, 429, slow, flap, drop>`
+(e.g. `?mode=500`) and watch the dashboard.
 
 ## API surface
 
