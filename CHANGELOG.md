@@ -9,6 +9,16 @@
 
 ---
 
+## 2026-11-04 — подготовка H-полосы [docs]
+
+- `e2ea2a6` — `h2_walkthrough.md` + `h3_walkthrough.md`: меню
+  решений с рекомендациями, write map по файлам/строкам,
+  verify-скрипты (дробный `WindowHours` для e2e-окна, дробный
+  lease-таймаут + `mode=slow` для хаоса #7). `h1_walkthrough.md` —
+  залочен под-вопрос (eventId в Redis-value), write map,
+  новые сигнатуры `IDeduplicationStore`. `tasks.md` — карта входа
+  на walkthrough-файлы.
+
 ## 2026-10-28 — платформа под H-3 + гигиена [D]
 
 ### `975d00f` — `ClaimVersion` миграция + StatsCache + .gitattributes
