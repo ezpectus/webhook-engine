@@ -330,9 +330,9 @@ CHANGELOG) остаются RU — это лог процесса, не лицо
 
 | Таск | Инструкция | Трогаешь | Подставлено |
 |------|-----------|----------|-------------|
-| H-1 | `docs/guides/h1_walkthrough.md` (решения залочены) | `Endpoints.cs` → `IngestEvent` + `ComputeKey` | `TimeProvider` в DI; 1 вопрос: eventId при Redis-хите |
-| H-2 | тикет ниже (~стр. 380) | `Endpoints.cs` → `IngestEvent` | ловушка: ключ+другое тело → 409/422 |
-| H-3 | тикет ниже (~стр. 407) | `DeliveryWorker.cs` | колонка `ClaimVersion` + миграция уже лежат |
+| H-1 | `docs/guides/h1_walkthrough.md` (решения залочены + write map) | `Endpoints.cs` → `IngestEvent` + `ComputeKey`; `IDeduplicationStore` | `TimeProvider` в DI; eventId при Redis-хите — решено (value в Redis) |
+| H-2 | `docs/guides/h2_walkthrough.md` (меню решений + write map) | `Endpoints.cs` → `IngestEvent` | ловушка: ключ+другое тело → 409; строится на маркере H-1 |
+| H-3 | `docs/guides/h3_walkthrough.md` (меню решений + write map) | `DeliveryWorker.cs`, `SweeperService.cs`, `Endpoints.cs`, `DbContext` | колонка `ClaimVersion` + миграция уже лежат |
 | Финал | `PLAN.md` → boundary map | голосом прогоняешь | — |
 
 ### H-1 · Честное dedup-окно (В8-фикс) · `todo` · XS–S

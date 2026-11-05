@@ -57,12 +57,10 @@ Watch the units: `now` in **seconds**, window converted to seconds too.
      PG backstop — a rare, documented degradation.
    - Two keys are needed: one for `IsKnownAsync`/`MarkAsync`
      (content key), one stored in `IdempotencyKey` (bucketed key).
-   - **Open sub-decision (pick when writing):** on a Redis hit you
-     need the *original* `eventId` — can't find the PG row by
-     `IdempotencyKey` (it's bucketed). Either (a) store `eventId`
-     as the Redis *value* (`SET dedup:key <guid>` — small
-     `IDeduplicationStore` shape change, no extra index) or (b) add
-     a non-unique `ContentHash` column and look up by it.
+   - **Sub-decision — LOCKED (2026-11-04):** option (a). Redis
+     *value* = the original `eventId` (`SET dedup:key <guid>`).
+     Redis hit → answer `duplicate` straight from Redis, no PG
+     roundtrip, no `ContentHash` column.
 3. **`WindowHours <= 0` → clamp to 1.** Dedup never divides by
    zero and never silently disables. (Alternatives considered:
    "0 = forever" and fail-fast-on-config — both defensible; clamp
@@ -85,16 +83,80 @@ Watch the units: `now` in **seconds**, window converted to seconds too.
   client-supplied Idempotency-Key — exists.)
 - **`23505` catch still works** — the bucket is inside the same
   unique-indexed string; nothing to change there.
-- **Redis hit → find the original event.** `IdempotencyKey` is
-  bucketed, so `WHERE IdempotencyKey = contentKey` finds nothing —
-  this is the open sub-decision (Redis value = eventId vs
-  `ContentHash` column). Edge: Redis says dup but the PG row is
-  gone — fall through to insert, same as today.
+- **Redis hit → the value IS the eventId.** With (a) there is no
+  PG lookup on the hit path — `duplicate` comes straight from the
+  stored guid. Degradation to know: Redis says dup but the PG row
+  is gone (manual wipe) → client gets a dangling id. Accepted:
+  cache-ahead-of-truth only under external deletion. Also: the
+  `duplicate` response on this path has `eventId` + `status`, no
+  `eventStatus` field — the PG-catch path still returns the full
+  row shape. Both shapes are fine; note it in the journal.
+- **Unit-mismatch #2 (fractional window).** `WindowHours` becomes a
+  `double` so a sub-hour window is possible (e.g. `0.002` ≈ 7s —
+  this is how you verify the bucket boundary in seconds, not by
+  waiting an hour). Trap: `windowHours * 3600 < 1` →
+  `(long)(0.36) = 0` → **division by zero** in the bucket math.
+  Guard the *seconds*, not the hours.
+- **Old-format Redis values.** Existing keys hold `"1"`, not a
+  guid. A guid-parse failure → treat as miss → falls through to
+  insert → PG index decides. Self-healing, no migration needed.
 - **TTL anchored at first sight** — Redis `SET NX EX` does NOT slide:
   each dup hit does not extend the window. Dedup horizon = first
   event + window, not last dup + window. Know which you implemented.
 
-## Tests you write
+## Write map — every edit, in order
+
+Interface first (signature is the contract, then implementations):
+
+**`Core/Abstractions/IDeduplicationStore.cs`** — the pair becomes:
+```csharp
+Task<Guid?> GetEventIdAsync(string key, CancellationToken ct = default);
+Task MarkAsync(string key, Guid eventId, TimeSpan window, CancellationToken ct = default);
+```
+`IsKnownAsync` is gone — a non-null guid IS "known". Only caller:
+`IngestEvent`.
+
+**`Infrastructure/Redis/RedisDeduplicationStore.cs`**
+- `GetEventIdAsync`: `StringGetAsync(Prefixed(key))` →
+  `Guid.TryParse` → guid or null (old `"1"` values → null → miss).
+  Same `catch (RedisException)` → null (fail-open) as before.
+- `MarkAsync`: `StringSetAsync(Prefixed(key), eventId.ToString(), window, When.NotExists)`.
+
+**`Api/Endpoints/Endpoints.cs`** — `IngestEvent`:
+1. Signature: add `TimeProvider time` (before `CancellationToken`).
+   DI already has `TimeProvider.System`.
+2. Replace `var key = ComputeKey(...)` (line ~81) with the
+   window/bucket computation + both keys:
+   `windowHours` (double, `<= 0 → 1`) → `windowSecs = Math.Max(1, …)`
+   → `bucket = time.GetUtcNow().ToUnixTimeSeconds() / windowSecs`
+   → `redisKey = ComputeKey(wh, payload)` → `key = ComputeKey(wh, payload, bucket)`.
+3. Dedup check: `dedup.GetEventIdAsync(redisKey, ct)` → `Guid` →
+   `metrics.DedupHit()` + return `{ eventId, "duplicate" }`. The PG
+   `FirstOrDefaultAsync` fallback inside the Redis-hit branch is
+   deleted — the value carries the id now.
+4. Line ~106: `DateTimeOffset.UtcNow` → `time.GetUtcNow()` (same
+   clock as the bucket).
+5. 23505-catch: **unchanged** — `key` is already the bucketed pgKey.
+6. Line ~155: `window = TimeSpan.FromHours(windowHours)`;
+   `MarkAsync(redisKey, ev.Id, window)` — note: **redisKey**, not
+   `key`. Marking the bucketed key would dedup forever on the
+   content the rolling window was supposed to expire.
+
+**`ComputeKey`** — signature `(Guid webhookId, string payload,
+long? bucket = null)`; `null` → `"{wh}:{payload}"`, else
+`"{wh}:{payload}:{bucket}"`. Same SHA256 hex-lower.
+
+## Tests / verification
+
+`ComputeKey` is `private` in Api — the test project doesn't
+reference it. Options: (a) move it to `Core` (pure helper, say
+`DedupKey`) — one-line move, then unit tests are free; (b) skip
+unit tests, verify end-to-end only. If (a): say the word, the move
+is mechanical and it's my side of the fence.
+
+End-to-end (the real AC): run with `Dedup__WindowHours=0.002`
+(≈7s bucket) → POST → POST → `duplicate`; sleep ~8s → POST →
+**new event id, second PG row**. Reset to 24 after.
 
 - `ComputeKey`: same input + same bucket → identical key; same input +
   adjacent bucket → different keys; `bucket: null` → stable content
