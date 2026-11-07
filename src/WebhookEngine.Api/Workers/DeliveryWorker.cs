@@ -12,6 +12,7 @@ public sealed class DeliveryWorker(
     IConfiguration config,
     IRetryScheduler scheduler,
     Core.RetryScheduling.BackoffPolicy backoff,
+    TimeProvider time,
     ILogger<DeliveryWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -38,7 +39,7 @@ public sealed class DeliveryWorker(
 
             try
             {
-                await ProcessAsync(ev, db, sender, feed, limiter, metrics, backoff, scheduler, stoppingToken);
+                await ProcessAsync(ev, db, sender, feed, limiter, metrics, backoff, scheduler, time, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -57,6 +58,7 @@ public sealed class DeliveryWorker(
         WebhookEngine.Core.Metrics.EngineMetrics metrics,
         Core.RetryScheduling.BackoffPolicy backoff,
         IRetryScheduler scheduler,
+        TimeProvider time,
         CancellationToken ct)
     {
         var tracked = await db.Events.FindAsync([ev.Id], ct);
@@ -78,8 +80,9 @@ public sealed class DeliveryWorker(
             {
                 metrics.LimiterDelay();
                 tracked.Status = EventStatus.RetryScheduled;
-                tracked.NextAttemptAt = DateTimeOffset.UtcNow + wait;
-                tracked.UpdatedAt = DateTimeOffset.UtcNow;
+                var deferUntil = time.GetUtcNow();
+                tracked.NextAttemptAt = deferUntil + wait;
+                tracked.UpdatedAt = deferUntil;
                 await db.SaveChangesAsync(ct);
                 await scheduler.ScheduleAsync(ev.Id, tracked.NextAttemptAt.Value, ct);
                 return;
@@ -92,7 +95,7 @@ public sealed class DeliveryWorker(
             : await sender.SendAsync(webhook.Url, tracked.Payload, ct, webhook.Secret);
         sw.Stop();
 
-        var now = DateTimeOffset.UtcNow;
+        var now = time.GetUtcNow();
         tracked.AttemptCount++;
         tracked.UpdatedAt = now;
         tracked.Attempts.Add(new DeliveryAttempt

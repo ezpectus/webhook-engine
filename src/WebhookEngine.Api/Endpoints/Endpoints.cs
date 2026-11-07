@@ -24,7 +24,8 @@ public static class Endpoints
     }
 
     private static async Task<IResult> RegisterWebhook(
-        RegisterWebhookRequest req, WebhookEngineDbContext db, CancellationToken ct)
+        RegisterWebhookRequest req, WebhookEngineDbContext db,
+        TimeProvider time, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Url) || !Uri.TryCreate(req.Url, UriKind.Absolute, out _))
             return Results.BadRequest(new { error = "valid url required" });
@@ -42,7 +43,7 @@ public static class Endpoints
             Url = req.Url,
             Secret = req.Secret,
             RateLimitPerSecond = req.RateLimitPerSecond ?? 10,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAt = time.GetUtcNow()
         };
         db.Webhooks.Add(hook);
         await db.SaveChangesAsync(ct);
@@ -171,7 +172,8 @@ public static class Endpoints
     }
 
     private static async Task<IResult> ReplayDeadLetter(
-        Guid eventId, WebhookEngineDbContext db, IEventQueue queue, CancellationToken ct)
+        Guid eventId, WebhookEngineDbContext db, IEventQueue queue,
+        TimeProvider time, CancellationToken ct)
     {
         var dl = await db.DeadLetters
             .FirstOrDefaultAsync(d => d.EventId == eventId && d.ReplayedAt == null, ct);
@@ -185,7 +187,7 @@ public static class Endpoints
         // D12: replay bypasses dedup (the same key would be eaten by the filter).
         // Attempts history is an audit trail; AttemptCount resets — a fresh
         // pass gets a fresh retry budget.
-        var now = DateTimeOffset.UtcNow;
+        var now = time.GetUtcNow();
         ev.AttemptCount = 0;
         ev.NextAttemptAt = null;
         ev.UpdatedAt = now;

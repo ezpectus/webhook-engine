@@ -15,6 +15,7 @@ public sealed class SweeperService(
     IEventQueue queue,
     IRetryScheduler scheduler,
     IConfiguration config,
+    TimeProvider time,
     ILogger<SweeperService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -25,7 +26,7 @@ public sealed class SweeperService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await Task.Delay(interval, stoppingToken);
+            await Task.Delay(interval, time, stoppingToken);
             try
             {
                 await SweepAsync(batch, leaseTimeout, stoppingToken);
@@ -42,7 +43,7 @@ public sealed class SweeperService(
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<WebhookEngineDbContext>();
         var metrics = scope.ServiceProvider.GetRequiredService<WebhookEngine.Core.Metrics.EngineMetrics>();
-        var now = DateTimeOffset.UtcNow;
+        var now = time.GetUtcNow();
 
         // A worker died mid-send — the event hangs in InFlight. Lease expired → back to Pending.
         var staleBefore = now - leaseTimeout;
