@@ -9,6 +9,27 @@
 
 ---
 
+## 2026-11-07 — H-1 написан и проверен e2e [U/D]
+
+- `712d7e9` — **[U]** H-1 ядро: `IDeduplicationStore` →
+  `GetEventIdAsync`/`MarkAsync(key, eventId, window)`; Redis-store
+  хранит eventId значением (`SET NX`, `TryParse` → miss на
+  null/легаси/мусоре — fail-open); `IngestEvent` — `TimeProvider`,
+  `double WindowHours` с клампом, bucket-секунды, два ключа
+  (content=Redis / bucketed=PG), `ComputeKey(long? bucket)`.
+- `5e41d3c` — **[D]** платформа: `TimeProvider` в `WebhookSender`,
+  `TokenBucket`, `BackoffPolicy`, `HeapRetryScheduler`,
+  `SweeperService`, `StatsCache`, тестах и тулзах; все комментарии
+  в исходниках → EN (~100 строк); `appsettings` — коммент
+  дедуп-окна починен по смыслу (PG-индекс больше не «навсегда»).
+- `d3e10eb` — **[docs]** PLAN.md: журнал реализации + 3
+  ревью-находки; tasks.md: H-1 → `review` (e2e окном ~7с пройдена,
+  остались checkpoint-ответы).
+- E2E-факт: `Dedup__WindowHours=0.002` → POST1 accepted → POST2
+  duplicate с тем же id **из Redis** (нет `eventStatus` в ответе —
+  быстрый путь) → POST3 через 9с = новое событие; в PG два ряда,
+  `IdempotencyKey` разошлись по bucket-суффиксу. 40/40 тестов.
+
 ## 2026-11-04 — подготовка H-полосы [docs]
 
 - `e2ea2a6` — `h2_walkthrough.md` + `h3_walkthrough.md`: меню
