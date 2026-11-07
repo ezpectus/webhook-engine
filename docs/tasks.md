@@ -335,7 +335,12 @@ CHANGELOG) остаются RU — это лог процесса, не лицо
 | H-3 | `docs/guides/h3_walkthrough.md` (меню решений + write map) | `DeliveryWorker.cs`, `SweeperService.cs`, `Endpoints.cs`, `DbContext` | колонка `ClaimVersion` + миграция уже лежат |
 | Финал | `PLAN.md` → boundary map | голосом прогоняешь | — |
 
-### H-1 · Честное dedup-окно (В8-фикс) · `todo` · XS–S
+### H-1 · Честное dedup-окно (В8-фикс) · `review` · XS–S
+
+*Код написан юзером + ревью-фиксы (3 семантических бага, журнал
+PLAN.md 07.11). E2E окном ~7с пройдена: дубль в окне → тот же id из
+Redis-значения, в следующем бакете → новое событие + второй ряд в PG.
+Осталось: checkpoint-ответы юзера вслух.*
 
 **Проблема:** `IdempotencyKey = sha256(webhookId + payload)` — один и
 тот же ключ навсегда: PG unique ловит «тот же POST через неделю» как
