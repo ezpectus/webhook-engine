@@ -28,11 +28,11 @@ public static class Endpoints
     {
         if (string.IsNullOrWhiteSpace(req.Url) || !Uri.TryCreate(req.Url, UriKind.Absolute, out _))
             return Results.BadRequest(new { error = "valid url required" });
-        // Фикс ревью: rate <= 0 валиден на входе, но ломается в глубине —
-        // TokenBucket бросал бы ArgumentOutOfRangeException при каждой
-        // отправке → событие прыгало InFlight↔Pending вечно (crash-loop,
-        // дубли-фон). Невалидное отсекаем на границе, как кривой URL.
-        // Было: RateLimitPerSecond = req.RateLimitPerSecond ?? 10 — без проверки.
+        // Review fix: rate <= 0 is valid at intake but breaks deeper —
+        // TokenBucket would throw ArgumentOutOfRangeException on every
+        // send → the event would bounce InFlight↔Pending forever (crash
+        // loop, dup spam). Reject at the boundary, same as a bad URL.
+        // Was: RateLimitPerSecond = req.RateLimitPerSecond ?? 10 — unchecked.
         if (req.RateLimitPerSecond is <= 0)
             return Results.BadRequest(new { error = "rateLimitPerSecond must be > 0" });
 
@@ -67,6 +67,7 @@ public static class Endpoints
         IEventQueue queue,
         IConfiguration config,
         WebhookEngine.Core.Metrics.EngineMetrics metrics,
+        TimeProvider time,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Payload))
@@ -78,22 +79,21 @@ public static class Endpoints
         if (!webhook.IsActive)
             return Results.BadRequest(new { error = "webhook inactive" });
 
-        var key = ComputeKey(req.WebhookId, req.Payload);
+        var windowHours = config.GetValue("Dedup:WindowHours", 24.0);
+        if (windowHours <= 0) windowHours = 1;
+        var windowSecs = Math.Max(1L, (long)(windowHours * 3600));
+        var bucket = time.GetUtcNow().ToUnixTimeSeconds() / windowSecs;
+        var redisKey = ComputeKey(req.WebhookId, req.Payload);
+        var key = ComputeKey(req.WebhookId, req.Payload, bucket);
 
-        if (await dedup.IsKnownAsync(key, ct))
+        var seenId = await dedup.GetEventIdAsync(redisKey, ct);
+        if (seenId != Guid.Empty)
         {
-            var seen = await db.Events.AsNoTracking()
-                .FirstOrDefaultAsync(e => e.IdempotencyKey == key, ct);
-            if (seen is not null)
-            {
-                metrics.DedupHit();
-                return Duplicate(seen);
-            }
-            // Redis помнит ключ, а в PG строки нет (кеш протёрли / insert не
-            // доехал) — пропускаем в insert: индекс разрулит истину.
+            metrics.DedupHit();
+            return Results.Ok(new { eventId = seenId, status = "duplicate" });
         }
 
-        // Backpressure: отказ только при раздутой персистентной очереди (вариант D с потолком).
+        // Backpressure: reject only when the persistent queue is bloated (variant D with a ceiling).
         var threshold = config.GetValue("Queue:PendingThreshold", 100_000);
         var depth = await db.Events.CountAsync(
             e => e.Status != EventStatus.Delivered && e.Status != EventStatus.DeadLettered, ct);
@@ -103,7 +103,7 @@ public static class Endpoints
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
 
-        var now = DateTimeOffset.UtcNow;
+        var now = time.GetUtcNow();
         var ev = new NotificationEvent
         {
             Id = Guid.NewGuid(),
@@ -128,9 +128,9 @@ public static class Endpoints
             return Duplicate(seen);
         }
 
-        // Быстрый путь. Атомарный claim Pending→InFlight: у кого сработал
-        // UPDATE — тот и enqueue'ит. Sweeper, успевший перехватить событие,
-        // не может создать двойной enqueue (гонка В3).
+        // Fast path. Atomic claim Pending→InFlight: whoever's UPDATE
+        // lands does the enqueue. A sweeper that raced in first can't
+        // cause a double enqueue (race B3).
         var claimed = await db.Events
             .Where(e => e.Id == ev.Id && e.Status == EventStatus.Pending)
             .ExecuteUpdateAsync(s => s
@@ -139,7 +139,7 @@ public static class Endpoints
 
         if (claimed == 1 && !queue.TryEnqueue(ev))
         {
-            // Канал полон — возвращаем в Pending, доберёт sweeper.
+            // Channel full — roll back to Pending, the sweeper will pick it up.
             await db.Events
                 .Where(e => e.Id == ev.Id && e.Status == EventStatus.InFlight)
                 .ExecuteUpdateAsync(s => s
@@ -152,8 +152,8 @@ public static class Endpoints
             ev.Status = EventStatus.InFlight;
         }
 
-        var window = TimeSpan.FromHours(config.GetValue("Dedup:WindowHours", 24));
-        await dedup.MarkAsync(key, window, ct);
+        var window = TimeSpan.FromHours(windowHours);
+        await dedup.MarkAsync(redisKey, ev.Id, window, ct);
 
         metrics.Accepted();
         return Results.Accepted(value: new { eventId = ev.Id, status = "accepted" });
@@ -182,20 +182,20 @@ public static class Endpoints
         if (ev is null || ev.Status != EventStatus.DeadLettered)
             return Results.Conflict(new { error = "event not in DeadLettered state" });
 
-        // D12: replay идёт в обход dedup (тот же ключ был бы съеден фильтром).
-        // История Attempts — аудит, AttemptCount обнуляем: новый заход получает
-        // свежий бюджет ретраев.
+        // D12: replay bypasses dedup (the same key would be eaten by the filter).
+        // Attempts history is an audit trail; AttemptCount resets — a fresh
+        // pass gets a fresh retry budget.
         var now = DateTimeOffset.UtcNow;
         ev.AttemptCount = 0;
         ev.NextAttemptAt = null;
         ev.UpdatedAt = now;
         dl.ReplayedAt = now;
 
-        // Фикс ревью: сначала durable-запись, потом enqueue — как в ingest.
-        // Было: TryEnqueue до SaveChanges → воркер мог подхватить элемент,
-        // пока в PG ещё DeadLettered, пропустить как stale, а строка
-        // висла InFlight до lease-протухания (5 мин задержки). Теперь:
-        // claim InFlight → enqueue → не влезло → откат в Pending.
+        // Review fix: durable write first, enqueue second — same as ingest.
+        // Was: TryEnqueue before SaveChanges → a worker could pick up the
+        // item while PG still said DeadLettered, skip it as stale, and the
+        // row would sit InFlight until lease expiry (5 min delay). Now:
+        // claim InFlight → enqueue → didn't fit → roll back to Pending.
         ev.Status = EventStatus.InFlight;
         await db.SaveChangesAsync(ct);
         if (!queue.TryEnqueue(ev))
@@ -283,9 +283,10 @@ public static class Endpoints
         });
     }
 
-    private static string ComputeKey(Guid webhookId, string payload)
+    private static string ComputeKey(Guid webhookId, string payload, long? bucket = null)
         => Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes($"{webhookId}:{payload}"))).ToLowerInvariant();
+            SHA256.HashData(Encoding.UTF8.GetBytes(
+                bucket is null ? $"{webhookId}:{payload}" : $"{webhookId}:{payload}:{bucket}"))).ToLowerInvariant();
 
     private static IResult Duplicate(NotificationEvent e)
         => Results.Ok(new { eventId = e.Id, status = "duplicate", eventStatus = e.Status.ToString() });

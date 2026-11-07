@@ -5,8 +5,9 @@ using WebhookEngine.Core.Abstractions;
 namespace WebhookEngine.Infrastructure.Redis;
 
 /// <summary>
-/// Redis-реализация dedup-кеша. Политика — fail-open: при недоступном
-/// Redis проверка отвечает «не знаю», а дубли отсекает unique-индекс PG.
+/// Redis implementation of the dedup cache. Policy is fail-open: when
+/// Redis is down the check answers "don't know" and the PG unique index
+/// stays the hard dedup boundary.
 /// </summary>
 public sealed class RedisDeduplicationStore(
     IConnectionMultiplexer redis,
@@ -14,24 +15,26 @@ public sealed class RedisDeduplicationStore(
 {
     private IDatabase Db => redis.GetDatabase();
 
-    public async Task<bool> IsKnownAsync(string key, CancellationToken ct = default)
+    public async Task<Guid> GetEventIdAsync(string key, CancellationToken ct = default)
     {
         try
         {
-            return await Db.KeyExistsAsync(Prefixed(key));
+            var value = await Db.StringGetAsync(Prefixed(key));
+            
+            return Guid.TryParse(value,out var id) ? id : Guid.Empty;
         }
         catch (RedisException ex)
         {
             logger.LogWarning(ex, "Redis down on dedup check — failing open, PG index still guards");
-            return false;
+            return Guid.Empty;
         }
     }
 
-    public async Task MarkAsync(string key, TimeSpan window, CancellationToken ct = default)
+    public async Task MarkAsync(string key, Guid eventId, TimeSpan window, CancellationToken ct = default)
     {
         try
         {
-            await Db.StringSetAsync(Prefixed(key), "1", window, When.NotExists);
+            await Db.StringSetAsync(Prefixed(key), eventId.ToString(), window, When.NotExists);
         }
         catch (RedisException ex)
         {
