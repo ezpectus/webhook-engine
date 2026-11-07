@@ -29,6 +29,14 @@
   duplicate с тем же id **из Redis** (нет `eventStatus` в ответе —
   быстрый путь) → POST3 через 9с = новое событие; в PG два ряда,
   `IdempotencyKey` разошлись по bucket-суффиксу. 40/40 тестов.
+- `893cec4` — **[D]** последние утечки `UtcNow`: `TimeProvider` в
+  `DeliveryWorker`, `SweeperService` (включая тик `Task.Delay`),
+  регистрацию вебхука и DLQ-replay. В src/ реальных часов больше нет
+  (MockReceiver — внешний наблюдатель, осознанно).
+- `40443dc` — **[D]** границы эндпоинтов: non-JSON payload → 400
+  (был 500 22P02), `WindowHours` NaN/≤0→1 и кап 8760ч (был 500
+  `OverflowException` на `TimeSpan.FromHours`), webhook URL только
+  http(s), `PendingThreshold ≤ 0` → кламп. Проверено живьём 7 кейсов.
 
 ## 2026-11-04 — подготовка H-полосы [docs]
 
