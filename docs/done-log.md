@@ -5,6 +5,7 @@
 
 | Таск | Что сделано | Коммиты | Статус |
 | --- | --- | --- | --- |
+| **H-1** Честное dedup-окно (В8-фикс) | Rolling-окно: Redis-маркер `dedup:sha256(wh:payload)` хранит **eventId значением** (TTL от первого вида) → дубль отвечает из Redis без PG; PG-бэкстоп — бакетный ключ `sha256(wh:payload:bucket)`. `WindowHours` — double с клампом [1ч, 1год]. Ревью поймало 3 семантических бага при зелёном билде (мёртвый fast-path, раздвоение источника, хвостовое `:` в ключе) — журнал PLAN.md 07.11 + incidents. E2E окном ~7с: POST2 → duplicate с тем же id из Redis; POST3 → новое событие; в PG два ряда с разными ключами. Граница: Redis down + стык бакета → легальный дубль (задокументирована, закрыта при живом Redis). Checkpoint-ответы записаны в журнале | `712d7e9` `5e41d3c` `893cec4` `40443dc` | done |
 | **TASK-004** Token bucket | Bucket юзера в `/* */` + референс; 6 тестов; epsilon-фикс; лимитер врезан в воркер (D7); защита голосом 26.10 (старт-полный/ленивый refill/lock — эталоны в open_questions) | `ee8ea8e` `0829b37` | done |
 | **TASK-006** DLQ endpoints | `GET /deadletters`, `POST .../replay` (D12: обход dedup, счётчик→0); семантика подтверждена юзером + живым replay-циклом в хаос-прогоне | `cf0ef7c` | done |
 | **TASK-009** Наблюдаемость | `EngineMetrics` + `/metrics` + панель; выбор юзера 26.10: `dlq_live`, `staleReclaims`, `dedupHits`; эталон — `queue_depth`↑ при плоском `sendsOk` для молчаливой потери | `47df4b5` | done |
@@ -61,10 +62,10 @@ bucket без инвалидации при смене rate, payload без ли
 | 6 | Endpoint флапает | `?mode=flap` | attempts [500, 200] → Delivered | ретрай лечит транзиенты | ✅ |
 | 7 | Lease протухает посреди send | `InFlightTimeoutMinutes=0` + `?mode=slow` | **2 строки attempt#1 за 6с** — параллельный дубль-отправка; attemptCount=2 на 3 реальных send'а (last-write-wins) | В7 — легальная граница at-least-once | ⚠️ дубль допустим, счётчик грязный |
 | 8 | Replay из DLQ | `POST /deadletters/{id}/replay` | AttemptCount→0, 5 старых attempts в аудите, цикл пошёл заново | replay = новый бюджет | ✅ |
-| 9 | Дубль после окна dedup | `Dedup__WindowHours=0`, POST ×2 | всё равно duplicate — **unique-индекс бессрочен**, TTL чистит только Redis-кэш | окно ≠ горизонт | ⚠️ семантика на ревью (D) |
+| 9 | Дубль после окна dedup | `Dedup__WindowHours=0`, POST ×2 | всё равно duplicate — **unique-индекс бессрочен**, TTL чистит только Redis-кэш | окно ≠ горизонт | ✅ исправлено H-1 (07.11): бакет в ключе |
 
 **Выводы:**
 - Потерь нигде не было — все сбои деградировали в «честный отказ» или «восстановление из PG».
 - В7 воспроизведён: дубль-отправка реальна при протухшем lease — легально по at-least-once, но `AttemptCount` занижается (last-write-wins). Решение: принять границу или lease-version — вопрос В7 в open_questions.
-- Dedup-горизонт = ∞: unique `IdempotencyKey` в PG не имеет TTL; `Dedup:WindowHours` влияет только на Redis-кэш. Если нужно окно по времени — ключ должен содержать бакет времени, иначе дубль = навсегда. Новый вопрос в open_questions.
+- Dedup-горизонт = ∞: unique `IdempotencyKey` в PG не имеет TTL; `Dedup:WindowHours` влияет только на Redis-кэш. Если нужно окно по времени — ключ должен содержать бакет времени, иначе дубль = навсегда. Новый вопрос в open_questions. **→ Закрыто H-1 (2026-11-07):** `IdempotencyKey = sha256(wh:payload:bucket)`, Redis-маркер несёт eventId; горизонт теперь = окно.
 - Каденс ретраев = max(backoff, Sweeper.IntervalSeconds=10с) — backoff<10с сливается в тик.

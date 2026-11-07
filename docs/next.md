@@ -47,15 +47,15 @@ Still missing for "fully ready":
 
 ## Next wave (optional hands-on — the user's practice lane)
 
-3. **Q8 fix — honest dedup window (H-1)**: design locked 2026-10-28 —
-   rolling window in Redis (TTL from first sight, content key) +
-   bucketed PG key as backstop. Decisions in
-   `guides/h1_walkthrough.md`; ~30 lines in `IngestEvent` + tests.
-4. **Client `Idempotency-Key` header** — Stripe-style: client key wins,
-   content-hash as fallback. Evolution of D — real portfolio feature.
-5. **Q7 lease-versioning** — version column on the claim; a worker may
-   write only under its own version. Kills the dirty `AttemptCount`
-   boundary. The most "distributed" remaining task.
+3. ~~**Q8 fix — honest dedup window (H-1)**~~ ✅ done 2026-11-07:
+   rolling Redis marker (TTL from first sight, eventId as value) +
+   bucketed PG key; verified e2e on a ~7s window. Details — done-log.
+4. **Client `Idempotency-Key` header (H-2)** — Stripe-style: client
+   key wins, content-hash as fallback; same key + different body →
+   409/422. Walkthrough ready: `guides/h2_walkthrough.md`.
+5. **Q7 lease-versioning (H-3)** — `ClaimVersion` column already
+   migrated; a worker may write only under its own version. Kills the
+   dirty `AttemptCount` boundary. Walkthrough: `guides/h3_walkthrough.md`.
 
 ## Scale wave (when a second instance is actually needed)
 
