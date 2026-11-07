@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using WebhookEngine.Core.Abstractions;
@@ -27,8 +28,10 @@ public static class Endpoints
         RegisterWebhookRequest req, WebhookEngineDbContext db,
         TimeProvider time, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(req.Url) || !Uri.TryCreate(req.Url, UriKind.Absolute, out _))
-            return Results.BadRequest(new { error = "valid url required" });
+        if (string.IsNullOrWhiteSpace(req.Url)
+            || !Uri.TryCreate(req.Url, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https"))
+            return Results.BadRequest(new { error = "valid http(s) url required" });
         // Review fix: rate <= 0 is valid at intake but breaks deeper —
         // TokenBucket would throw ArgumentOutOfRangeException on every
         // send → the event would bounce InFlight↔Pending forever (crash
@@ -73,6 +76,13 @@ public static class Endpoints
     {
         if (string.IsNullOrWhiteSpace(req.Payload))
             return Results.BadRequest(new { error = "payload required" });
+        // The column is jsonb — a non-JSON payload would die deeper as an
+        // unhandled DbUpdateException (22P02 → 500). Reject at the boundary.
+        try { using var doc = JsonDocument.Parse(req.Payload); }
+        catch (JsonException)
+        {
+            return Results.BadRequest(new { error = "payload must be valid JSON" });
+        }
 
         var webhook = await db.Webhooks.FindAsync([req.WebhookId], ct);
         if (webhook is null)
@@ -81,7 +91,10 @@ public static class Endpoints
             return Results.BadRequest(new { error = "webhook inactive" });
 
         var windowHours = config.GetValue("Dedup:WindowHours", 24.0);
-        if (windowHours <= 0) windowHours = 1;
+        // NaN slips past `<= 0`; huge values overflow TimeSpan.FromHours.
+        // Clamp to [1h, 1y]: the window is a policy, not a crash vector.
+        if (double.IsNaN(windowHours) || windowHours <= 0) windowHours = 1;
+        windowHours = Math.Min(windowHours, 8760);
         var windowSecs = Math.Max(1L, (long)(windowHours * 3600));
         var bucket = time.GetUtcNow().ToUnixTimeSeconds() / windowSecs;
         var redisKey = ComputeKey(req.WebhookId, req.Payload);
@@ -95,7 +108,7 @@ public static class Endpoints
         }
 
         // Backpressure: reject only when the persistent queue is bloated (variant D with a ceiling).
-        var threshold = config.GetValue("Queue:PendingThreshold", 100_000);
+        var threshold = Math.Max(1, config.GetValue("Queue:PendingThreshold", 100_000));
         var depth = await db.Events.CountAsync(
             e => e.Status != EventStatus.Delivered && e.Status != EventStatus.DeadLettered, ct);
         if (depth >= threshold)
