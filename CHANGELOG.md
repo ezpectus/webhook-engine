@@ -37,6 +37,13 @@
   (был 500 22P02), `WindowHours` NaN/≤0→1 и кап 8760ч (был 500
   `OverflowException` на `TimeSpan.FromHours`), webhook URL только
   http(s), `PendingThreshold ≤ 0` → кламп. Проверено живьём 7 кейсов.
+- `88eecbe` — **[docs]** H-1 закрыт в бэклоге: строка в done-log
+  (+аннотация к хаос-#9), stub в tasks.md, В8 в open_questions
+  «закрыто кодом», next.md — очередь H-2/H-3.
+- `40bf043` — **[docs]** синк доков под пост-H-1 реальность:
+  `dedup-flow.mmd` (+вставки в system.md и architecture.md),
+  `schema.sql` ← `ClaimVersion` + L4-решение, incidents.md ← разбор
+  3 ревью-багов H-1, README ← honest-window + статус, PLAN ← журнал.
 
 ## 2026-11-04 — подготовка H-полосы [docs]
 
