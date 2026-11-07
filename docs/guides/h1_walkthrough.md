@@ -165,15 +165,19 @@ End-to-end (the real AC): run with `Dedup__WindowHours=0.002`
   two events, two ids; within the window → `duplicate`, one row.
 - `WindowHours <= 0` branch — the clamp: config `0` behaves like `1`.
 
-## Definition of done
+## Definition of done — ✓ all closed 2026-11-07
 
-- [ ] AC from the ticket: same payload in the *next* window → new
-      event; inside the window → `duplicate`
-- [ ] Your mini-plan spoken/written BEFORE the code (flow → where's
-      the dup → where's the loss → why OK)
-- [ ] Journal line in `PLAN.md`: bucket semantics + the
-      boundary-trade-off you accepted
-- [ ] `dotnet test` green
-- [ ] Voice-checkpoint: name the ONE remaining straddle-dup case
+- [x] AC from the ticket: same payload in the *next* window → new
+      event; inside the window → `duplicate` — **verified live**:
+      `WindowHours=0.002` (~7s bucket): POST2 → duplicate with the
+      same id from Redis, POST3 at +9s → new event, two PG rows with
+      different bucketed keys
+- [x] Your mini-plan spoken/written BEFORE the code — locked in the
+      2026-10-28 journal line (user dictation)
+- [x] Journal line in `PLAN.md`: bucket semantics + the
+      boundary-trade-off you accepted — 2026-11-07 lines
+- [x] `dotnet test` green — 40/40
+- [x] Voice-checkpoint: name the ONE remaining straddle-dup case
       (Redis down + bucket edge) and why it's acceptable — and why
-      the *pre-bucket* permanent dedup was the actual bug
+      the *pre-bucket* permanent dedup was the actual bug — canonical
+      answers recorded in the 2026-11-07 journal line

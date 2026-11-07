@@ -44,6 +44,12 @@
   `dedup-flow.mmd` (+вставки в system.md и architecture.md),
   `schema.sql` ← `ClaimVersion` + L4-решение, incidents.md ← разбор
   3 ревью-багов H-1, README ← honest-window + статус, PLAN ← журнал.
+- `700253b` — **[docs]** вопросы закрыты окончательно: checkpoint-ответы
+  H-1 вписаны в журнал PLAN.md (straddle-дубль: Redis down + стык
+  бакета; «навсегда» = баг контракта окна); строка «TTL истёк» в
+  карте границ переписана под новое событие; канонические ответы к
+  тренажёру T2/T3/T5/T6/T7; DoD-чекбоксы h1_walkthrough закрыты;
+  архивный `docs/ru/PLAN.md` помечен pre-H-1.
 
 ## 2026-11-04 — подготовка H-полосы [docs]
 

@@ -111,7 +111,7 @@ flowchart LR
 | POST /events, PG упал | нет | **нет** — клиент получает 5xx, не 202 | честный отказ до accept | хаос #1: HTTP 500 |
 | POST /events, Redis упал | нет | нет | fail-open → PG unique `IdempotencyKey` ловит дубль | хаос #2: 2-й POST = duplicate без Redis |
 | Ack после commit, клиент не услышал ответ | **да** — клиент ретраит → наш дубль на входе | нет | клиент видит timeout, но событие в PG; ретрай клиента → `duplicate` ответ, не второе событие | T5 разобран |
-| Redis TTL истёк, тот же ключ | нет | нет | PG unique бессрочен (В8 — принято) | хаос #9: TTL=0 → всё равно duplicate |
+| Redis TTL истёк, тот же ключ | нет | нет | PG unique бессрочен (В8 — принято) — **pre-H-1**: с 07.11 бакет в ключе, см. EN `PLAN.md` | хаос #9: TTL=0 → всё равно duplicate |
 | Claim → канал (канал полон) | нет | нет | `Pending` остаётся в PG, sweeper добирает тиком | хаос #4: cap=1, 3/3 доставлены |
 | Воркер умер после claim, до send | нет | нет | lease `InFlightTimeout` → sweeper реклеймит → повторный enqueue | хаос #7 стадия reclaim |
 | Send успешен, ACK/статус не записан (крах) | **да** — reclaim → повторная отправка | нет | at-least-once: дубль легален, потеря — нет | В7: две строки attempt#1 живьём |

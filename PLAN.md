@@ -112,6 +112,7 @@ After the write it is our responsibility until `Delivered` or
 | 2026-11-07 | All source comments → EN (open-source readiness): ~100 lines across src/, tools/, tests/ | platform polish, user request |
 | 2026-11-07 | Boundary hardening pass: non-JSON payload → 400 (was 500 on jsonb 22P02); `WindowHours` NaN/≤0→1 + cap 8760h (was 500 `OverflowException`); webhook URL http(s)-only; `PendingThreshold` clamped. Verified live, 7 cases | review-driven; ingest boundary = validate early, fail honest |
 | 2026-11-07 | Last clock leak closed: `TimeProvider` now the only clock in src/ — `DeliveryWorker`, `SweeperService` (incl. its `Task.Delay` tick), webhook register, DLQ replay. `UtcNow` remains only in MockReceiver (external observer, intentional) | kills the future fake-time test bomb for H-3 lease work |
+| 2026-11-07 | H-1 checkpoint answers (canonical record): **(1) remaining straddle-dup** — exactly one legal path: Redis down (fail-open to PG) AND the same content arriving on both sides of a bucket edge → different `sha256(wh:payload:bucket)` keys → both insert; Redis alive closes it because the content key outlives the bucket edge. **(2) why "dedup forever" was a bug** — `Dedup:WindowHours` promised a window but the un-bucketed PG unique key defined an *infinite* horizon: identical content after the window was rejected as duplicate, i.e. legitimate new events silently eaten. A config that does nothing is a lie in the contract | ticket closed; the answers also encoded in `dedup-flow.mmd` |
 
 ## Failure-boundary map: where duplicates, where loss (proven live)
 
@@ -124,7 +125,7 @@ The project's final criterion — every row backed by a live run
 | POST /events, PG down | no | **no** — client gets a 5xx, not a 202 | honest refusal before accept | chaos #1: HTTP 500 |
 | POST /events, Redis down | no | no | fail-open → PG unique `IdempotencyKey` catches the dup | chaos #2: 2nd POST = duplicate with Redis dead |
 | Ack after commit, client never heard it | **yes** — client retries → a dup on our ingest | no | client sees a timeout, but the event is in PG; client retry → `duplicate` response, not a second event | T5 analysed |
-| Redis TTL expired, same key | no | no | PG unique is permanent (Q8 — accepted) | chaos #9: TTL=0 → still duplicate |
+| Same content after the dedup window | **yes — now a new event by design** | no | bucketed PG key differs per window; Redis marker TTL = window. Pre-H-1 this row read "PG unique is permanent" — chaos #9 proved that a bug | e2e 07.11: POST3 in next bucket → new eventId |
 | Claim → channel (channel full) | no | no | `Pending` stays in PG, sweeper picks it up next tick | chaos #4: cap=1, 3/3 delivered |
 | Worker died after claim, before send | no | no | `InFlightTimeout` lease → sweeper reclaim → re-enqueue | chaos #7 reclaim stage |
 | Send succeeded, ack/status never written (crash) | **yes** — reclaim → repeated send | no | at-least-once: a dup is legal, loss is not | Q7: two attempt#1 rows observed live |
