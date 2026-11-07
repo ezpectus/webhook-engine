@@ -19,8 +19,8 @@ public sealed class WebhookSender(HttpClient http)
         {
             using var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-            // D14: подписываем тело HMAC-SHA256 — получатель проверяет, что
-            // вебхук от нас и не изменён (как X-Hub-Signature-256 у GitHub).
+            // D14: sign the body with HMAC-SHA256 — the receiver verifies the
+            // webhook is ours and unaltered (like GitHub's X-Hub-Signature-256).
             if (!string.IsNullOrEmpty(secret))
             {
                 var key = Encoding.UTF8.GetBytes(secret);
@@ -28,18 +28,18 @@ public sealed class WebhookSender(HttpClient http)
                 content.Headers.Add("X-Webhook-Signature", $"sha256={Convert.ToHexString(mac).ToLowerInvariant()}");
             }
 
-            // Фикс ревью: response обязан быть using'ом. Недиспознутый
-            // HttpResponseMessage держит соединение в пуле до GC — на
-            // высоком RPS пул исчерпывается и новые запросы ждут сокет.
-            // Было: var resp = await http.PostAsync(url, content, ct);
-            //   — работает на 100 rps, умирает на 1000+.
+            // Review fix: the response must be disposed. An undisposed
+            // HttpResponseMessage holds its pool connection until GC —
+            // at high RPS the pool exhausts and new requests wait on sockets.
+            // Was: var resp = await http.PostAsync(url, content, ct);
+            //   — fine at 100 rps, dies at 1000+.
             using var resp = await http.PostAsync(url, content, ct);
             var code = (int)resp.StatusCode;
 
             if (resp.IsSuccessStatusCode)
                 return SendResult.Ok(code);
 
-            // Ретраим только то, что может измениться: 5xx и 429 (у получателя rate limit).
+            // Retry only what can change: 5xx and 429 (receiver rate limit).
             var retryable = code == 429 || code >= 500;
             return SendResult.Failed(code, $"HTTP {code}", retryable);
         }

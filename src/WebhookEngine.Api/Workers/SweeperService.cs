@@ -6,9 +6,9 @@ using WebhookEngine.Infrastructure.Persistence;
 namespace WebhookEngine.Api.Workers;
 
 /// <summary>
-/// Сторож durability: возвращает протухшие InFlight-lease в Pending и
-/// подставляет в канал события, время которых пришло. PG — настоящая
-/// очередь, канал — ускоритель.
+/// Durability watchdog: returns stale InFlight leases to Pending and
+/// feeds the channel events whose time has come. PG is the real queue;
+/// the channel is an accelerator.
 /// </summary>
 public sealed class SweeperService(
     IServiceProvider services,
@@ -44,7 +44,7 @@ public sealed class SweeperService(
         var metrics = scope.ServiceProvider.GetRequiredService<WebhookEngine.Core.Metrics.EngineMetrics>();
         var now = DateTimeOffset.UtcNow;
 
-        // Воркер умер посреди send — событие зависло в InFlight. Lease истёк → назад в Pending.
+        // A worker died mid-send — the event hangs in InFlight. Lease expired → back to Pending.
         var staleBefore = now - leaseTimeout;
         var stale = await db.Events
             .Where(e => e.Status == EventStatus.InFlight && e.UpdatedAt < staleBefore)
@@ -57,13 +57,13 @@ public sealed class SweeperService(
             logger.LogWarning("Reclaimed {Count} stale in-flight events", stale);
         }
 
-        // Fast path: куча в памяти уже знает due-элементы (TASK-005).
-        // Каждый claim всё равно атомарный через PG — куча лишь подсказка.
+        // Fast path: the in-memory heap already knows due items (TASK-005).
+        // Every claim is still atomic through PG — the heap is only a hint.
         await foreach (var id in scheduler.ReadDueAsync(now, ct))
             await ClaimAndEnqueueAsync(db, id, now, ct);
 
-        // Slow path (истина): скан PG — покрывает рестарт и всё, что куча
-        // потеряла. Атомарный claim разруливает пересечения с fast path.
+        // Slow path (the truth): PG scan — covers restarts and everything
+        // the heap lost. The atomic claim resolves overlaps with fast path.
         var due = await db.Events
             .Where(e => (e.Status == EventStatus.Pending || e.Status == EventStatus.RetryScheduled)
                         && (e.NextAttemptAt == null || e.NextAttemptAt <= now))
@@ -73,13 +73,13 @@ public sealed class SweeperService(
 
         foreach (var e in due)
             if (!await ClaimAndEnqueueAsync(db, e.Id, now, ct))
-                break; // канал полон — следующий обход доберёт
+                break; // channel full — the next sweep will get it
     }
 
     private async Task<bool> ClaimAndEnqueueAsync(
         WebhookEngineDbContext db, Guid eventId, DateTimeOffset now, CancellationToken ct)
     {
-        // Атомарный claim: enqueue делает только тот, кто перевёл статус.
+        // Atomic claim: only whoever flipped the status does the enqueue.
         var claimed = await db.Events
             .Where(x => x.Id == eventId &&
                         (x.Status == EventStatus.Pending || x.Status == EventStatus.RetryScheduled))
@@ -87,12 +87,12 @@ public sealed class SweeperService(
                 .SetProperty(x => x.Status, EventStatus.InFlight)
                 .SetProperty(x => x.UpdatedAt, now), ct);
         if (claimed == 0)
-            return true; // кто-то другой уже забрал — не ошибка
+            return true; // someone else already claimed it — not an error
 
         var ev = await db.Events.AsNoTracking().FirstAsync(x => x.Id == eventId, ct);
         if (!queue.TryEnqueue(ev))
         {
-            // Канал полон — откат в Pending, следующий обход доберёт.
+            // Channel full — roll back to Pending, the next sweep will get it.
             await db.Events
                 .Where(x => x.Id == eventId && x.Status == EventStatus.InFlight)
                 .ExecuteUpdateAsync(s => s

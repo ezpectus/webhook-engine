@@ -12,7 +12,7 @@ public class TokenBucketRateLimiterTests
     public async Task Burst_WithinCapacity_NoDelay()
     {
         var limiter = new TokenBucketRateLimiter(new FakeTimeProvider());
-        // capacity = rate (D16): 3/сек → первые 3 отправки без паузы.
+        // capacity = rate (D16): 3/sec → first 3 sends with no pause.
         for (var i = 0; i < 3; i++)
             Assert.Equal(TimeSpan.Zero, await limiter.AcquireDelayAsync(A, 3));
     }
@@ -25,7 +25,7 @@ public class TokenBucketRateLimiterTests
             await limiter.AcquireDelayAsync(A, 2);
 
         var wait = await limiter.AcquireDelayAsync(A, 2);
-        // до следующего жетона при 2/сек — ~0.5с (epsilon на float-ошибку)
+        // next token at 2/sec — ~0.5s (epsilon for float error)
         Assert.True(wait > TimeSpan.FromSeconds(0.4));
         Assert.True(wait <= TimeSpan.FromSeconds(0.6));
     }
@@ -34,9 +34,9 @@ public class TokenBucketRateLimiterTests
     public async Task Buckets_PerWebhook_Independent()
     {
         var limiter = new TokenBucketRateLimiter(new FakeTimeProvider());
-        await limiter.AcquireDelayAsync(A, 1);          // A исчерпал burst
+        await limiter.AcquireDelayAsync(A, 1);          // A exhausted its burst
         Assert.True((await limiter.AcquireDelayAsync(A, 1)) > TimeSpan.Zero);
-        Assert.Equal(TimeSpan.Zero, await limiter.AcquireDelayAsync(B, 1)); // B свежий
+        Assert.Equal(TimeSpan.Zero, await limiter.AcquireDelayAsync(B, 1)); // B is fresh
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class TokenBucketRateLimiterTests
         await limiter.AcquireDelayAsync(A, 1);
         Assert.True((await limiter.AcquireDelayAsync(A, 1)) > TimeSpan.Zero);
 
-        time.Advance(TimeSpan.FromSeconds(1.1)); // прошло > периода refill
+        time.Advance(TimeSpan.FromSeconds(1.1)); // more than a refill period passed
         Assert.Equal(TimeSpan.Zero, await limiter.AcquireDelayAsync(A, 1));
     }
 }

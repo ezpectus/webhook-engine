@@ -1,17 +1,17 @@
-// MockReceiver — приёмник вебхуков для живых прогонов и хаос-тестов.
+// MockReceiver — webhook sink for live runs and chaos tests.
 //   dotnet run --project tools/MockReceiver   → http://localhost:5005
 //
-// POST /hook          — принять и вернуть 200
-// POST /hook?mode=X   — режим ответа:
-//   ok      200 всегда (дефолт)
-//   500     всегда 500
-//   429     всегда 429 (retryable)
-//   slow    200 после 15с паузы (таймаут sender'а 10с → retryable)
-//   flap    чередует 500/200 — endpoint "флапает"
-//   drop    ничего не отвечает (conn-level)
+// POST /hook          — accept and return 200
+// POST /hook?mode=X   — response mode:
+//   ok      always 200 (default)
+//   500     always 500
+//   429     always 429 (retryable)
+//   slow    200 after a 15s pause (sender timeout is 10s → retryable)
+//   flap    alternates 500/200 — a "flapping" endpoint
+//   drop    never responds (conn-level)
 //
-// GET  /received      — последние 200 полученных (тело, время, ip)
-// GET  /health        — жив ли приёмник
+// GET  /received      — last 200 received (body, time, ip)
+// GET  /health        — is the sink alive
 
 var app = WebApplication.CreateBuilder(args).Build();
 

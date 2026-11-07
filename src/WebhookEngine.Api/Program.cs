@@ -24,9 +24,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// UseHttpsRedirection не ставим: API живёт за localhost/nginx,
-// https-порта нет — middleware давал бы 302 на несуществующий порт
-// и шум в логах. Вернём когда появится TLS-терминация.
+// No UseHttpsRedirection: the API lives behind localhost/nginx,
+// there's no https port — the middleware would 302 to a nonexistent
+// port and spam the logs. Revisit when TLS termination appears.
 
 app.MapGet("/health", async (WebhookEngineDbContext db, IConnectionMultiplexer redis, CancellationToken ct) =>
 {

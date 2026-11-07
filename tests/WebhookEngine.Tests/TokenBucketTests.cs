@@ -24,7 +24,7 @@ public class TokenBucketTests
         for (var i = 0; i < 5; i++)
             bucket.TryTake();
 
-        time.Advance(TimeSpan.FromMilliseconds(200)); // +2 токена при 10/с
+        time.Advance(TimeSpan.FromMilliseconds(200)); // +2 tokens at 10/s
 
         Assert.True(bucket.TryTake());
         Assert.True(bucket.TryTake());
@@ -42,7 +42,7 @@ public class TokenBucketTests
     public void TimeUntilAvailable_OnEmpty_ReturnsWait()
     {
         var time = new FakeTimeProvider();
-        var bucket = new TokenBucket(1, 10, time); // токен капает за 100мс
+        var bucket = new TokenBucket(1, 10, time); // a token drips every 100ms
 
         Assert.True(bucket.TryTake());
 
@@ -56,7 +56,7 @@ public class TokenBucketTests
         var time = new FakeTimeProvider();
         var bucket = new TokenBucket(3, 10, time);
 
-        time.Advance(TimeSpan.FromMinutes(5)); // капнуло бы 3000 — но cap 3
+        time.Advance(TimeSpan.FromMinutes(5)); // would drip 3000 — but cap is 3
 
         for (var i = 0; i < 3; i++)
             Assert.True(bucket.TryTake());

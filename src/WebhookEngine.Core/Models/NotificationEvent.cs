@@ -12,10 +12,10 @@ public sealed class NotificationEvent
     public EventStatus Status { get; set; } = EventStatus.Pending;
     public int AttemptCount { get; set; }
 
-    // Версия клейма для H-3 (lease-versioning): инкрементится при каждом
-    // атомарном claim Pending/RetryScheduled→InFlight. Воркер пишет
-    // результат только если его версия ещё актуальна — страховка от
-    // last-write-wins при параллельном дубле (В7).
+    // Lease version (H-3): bumped on every atomic claim
+    // Pending/RetryScheduled→InFlight. A worker writes its result only if
+    // its version is still current — guards last-write-wins on a
+    // concurrent dup (B7).
     public int ClaimVersion { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }

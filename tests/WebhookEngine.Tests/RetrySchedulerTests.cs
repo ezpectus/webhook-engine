@@ -11,11 +11,11 @@ public class BackoffPolicyTests
     public void Delay_GrowsExponentially()
     {
         var p = Policy(new Random(42));
-        // attempt 0: base·1, attempt 1: base·2, attempt 2: base·4 — до jitter
+        // attempt 0: base·1, attempt 1: base·2, attempt 2: base·4 — before jitter
         var d0 = p.ComputeDelay(0);
         var d1 = p.ComputeDelay(1);
         var d2 = p.ComputeDelay(2);
-        // equal jitter: результат в [exp/2, exp)
+        // equal jitter: result falls in [exp/2, exp)
         Assert.InRange(d0.TotalMilliseconds, 500, 1000);
         Assert.InRange(d1.TotalMilliseconds, 1000, 2000);
         Assert.InRange(d2.TotalMilliseconds, 2000, 4000);
@@ -36,7 +36,7 @@ public class BackoffPolicyTests
         var delays = Enumerable.Range(0, 50)
             .Select(_ => p.ComputeDelay(3))
             .ToList();
-        // при одинаковом attempt задержки различаются — стада ретраев расселяются
+        // same attempt → different delays — retry herds get scattered
         Assert.True(delays.Distinct().Count() > 10);
     }
 
@@ -73,7 +73,7 @@ public class HeapRetrySchedulerTests
         await s.ScheduleAsync(b, T(20));
 
         var due = await Drain(s, T(25));
-        Assert.Equal([a, b], due); // c ещё не наступил
+        Assert.Equal([a, b], due); // c isn't due yet
     }
 
     [Fact]
@@ -92,10 +92,10 @@ public class HeapRetrySchedulerTests
     {
         var s = new HeapRetryScheduler();
         var a = Guid.NewGuid();
-        await s.ScheduleAsync(a, T(10));  // v0 — устареет
-        await s.ScheduleAsync(a, T(50));  // v1 — актуальная
+        await s.ScheduleAsync(a, T(10));  // v0 — goes stale
+        await s.ScheduleAsync(a, T(50));  // v1 — current
 
-        // в момент T(10) доставать нечего: актуальная запись — на T(50)
+        // nothing to pull at T(10): the live entry sits at T(50)
         Assert.Empty(await Drain(s, T(10)));
         Assert.Equal([a], await Drain(s, T(50)));
     }
@@ -121,7 +121,7 @@ public class HeapRetrySchedulerTests
         });
         await Task.WhenAll(writer, read);
         var rest = await Drain(s, T(60));
-        // главное — ни гонок, ни брошенных исключений; счёт зависит от таймингов
+        // the point: no races, no leaked exceptions; the count depends on timing
         Assert.True(rest.Count <= 200);
     }
 }

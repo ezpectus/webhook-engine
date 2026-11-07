@@ -4,16 +4,16 @@ using WebhookEngine.Core.Abstractions;
 namespace WebhookEngine.Core.RetryScheduling;
 
 /// <summary>
-/// In-memory min-heap отложенных ретраев. УСКОРИТЕЛЬ, не истина:
-/// durable-расписание живёт в PG (NotificationEvent.NextAttemptAt) —
-/// рестарт теряет кучу, sweeper восстанавливает её из скана.
+/// In-memory min-heap of deferred retries. An ACCELERATOR, not the truth:
+/// the durable schedule lives in PG (NotificationEvent.NextAttemptAt) —
+/// a restart loses the heap, the sweeper rebuilds it from a scan.
 /// </summary>
 /// <remarks>
-/// PriorityQueue не умеет Remove → cancel/reschedule через версионные
-/// записи: каждый ScheduleAsync повышает версию события, при извлечении
-/// устаревшая версия тихо пропускается (lazy deletion, S1).
-/// Lock защищает кучу и версии: ScheduleAsync вызывается из воркеров,
-/// ReadDueAsync — из sweeper'а, одновременно.
+/// PriorityQueue has no Remove → cancel/reschedule via versioned entries:
+/// every ScheduleAsync bumps the event's version; on dequeue a stale
+/// version is silently skipped (lazy deletion, S1).
+/// The lock guards heap and versions: ScheduleAsync is called from
+/// workers, ReadDueAsync from the sweeper — concurrently.
 /// </remarks>
 public sealed class HeapRetryScheduler : IRetryScheduler
 {
@@ -45,10 +45,10 @@ public sealed class HeapRetryScheduler : IRetryScheduler
                     yield break;
                 _heap.Dequeue();
 
-                // Старая версия записи — событие перепланировали, пропускаем.
+                // Stale entry version — the event was rescheduled; skip it.
                 if (!_versions.TryGetValue(head.Id, out var current) || current != head.Version)
                     continue;
-                _versions.Remove(head.Id); // слот освобождаем: следующая версия снова с нуля
+                _versions.Remove(head.Id); // free the slot: next version starts from zero again
                 id = head.Id;
             }
             yield return id;

@@ -1,15 +1,15 @@
 namespace WebhookEngine.Core.RetryScheduling;
 
 /// <summary>
-/// Политика backoff для ретраев (D9): base × 2^attempt, ограниченная cap,
-/// плюс equal jitter — гарантированная половина паузы + разброс второй
-/// половины. Чистая функция: никакого состояния, никакой инфраструктуры.
+/// Retry backoff policy (D9): base × 2^attempt, capped, plus equal
+/// jitter — a guaranteed half of the pause + a spread on the other half.
+/// Pure function: no state, no infrastructure.
 /// </summary>
 /// <remarks>
-/// Equal jitter выбран вместо full: нижняя граница delay/2 не даёт
-/// событиям уйти в «ретрай почти сразу», что важно для флапающих
-/// endpoint'ов; разброс верхней половины расселяет стада ретраев,
-/// чтобы они не ударили получателя одной волной (thundering herd).
+/// Equal jitter chosen over full: the delay/2 floor keeps events from
+/// "retrying almost immediately", which matters for flapping endpoints;
+/// the spread upper half scatters retry herds so they don't hit the
+/// receiver as one wave (thundering herd).
 /// </remarks>
 public sealed class BackoffPolicy
 {
@@ -33,15 +33,15 @@ public sealed class BackoffPolicy
     }
 
     /// <summary>
-    /// Задержка до следующей попытки после попытки № <paramref name="attempt"/>
+    /// Delay until the next attempt after attempt № <paramref name="attempt"/>
     /// (0-based). min(cap, base·2^attempt) → equal jitter: [d/2, d).
     /// </summary>
     public TimeSpan ComputeDelay(int attempt)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(attempt);
 
-        // 2^attempt как сдвиг: attempt ≥ 30 переполнил бы int,
-        // но к этому моменту exponential давно за cap'ом.
+        // 2^attempt as a shift: attempt ≥ 30 would overflow int,
+        // but by then exponential is way past the cap anyway.
         var exponential = attempt >= 30 ? double.MaxValue
             : _baseDelay.TotalMilliseconds * Math.Pow(2, attempt);
         var capped = Math.Min(_maxDelay.TotalMilliseconds, exponential);
@@ -51,6 +51,6 @@ public sealed class BackoffPolicy
         return TimeSpan.FromMilliseconds(jittered);
     }
 
-    /// <summary>Попытки исчерпаны → событие идёт в DLQ, а не в ретрай.</summary>
+    /// <summary>Attempts exhausted → the event goes to DLQ, not to retry.</summary>
     public bool IsExhausted(int attemptCount) => attemptCount >= MaxAttempts;
 }

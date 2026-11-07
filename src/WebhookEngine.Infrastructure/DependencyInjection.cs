@@ -20,19 +20,20 @@ public static class DependencyInjection
             o.UseNpgsql(config.GetConnectionString("Postgres")));
 
         var redis = config.GetConnectionString("Redis") ?? "localhost:6379";
-        // abortConnect=false: Connect() не бросает при мёртвом Redis —
-        // возвращает мультиплексор в disconnected-режиме (ретраит в фоне).
-        // Иначе резолв IConnectionMultiplexer кинул бы исключение и
-        // fail-open семантика dedup ломалась бы на DI-границе: Redis down
-        // = ingest down, чего быть не должно (PG-индекс — страж).
+        // abortConnect=false: Connect() doesn't throw on a dead Redis —
+        // it returns a multiplexer in disconnected mode (retries in the
+        // background). Otherwise resolving IConnectionMultiplexer would
+        // throw and break dedup's fail-open semantics at the DI boundary:
+        // Redis down = ingest down, which must not happen (PG index is
+        // the guard).
         services.AddSingleton<IConnectionMultiplexer>(_ =>
             ConnectionMultiplexer.Connect(
                 ConfigurationOptions.Parse($"{redis},abortConnect=false")));
 
-        // Явная регистрация TimeProvider: эндпоинтам нужен инжектируемый
-        // «now» для тестируемого бакета времени в dedup-ключе (H-1).
-        // Если .NET-хост уже зарегистрировал его — последняя запись
-        // та же, безвредно.
+        // Explicit TimeProvider registration: endpoints need an injectable
+        // "now" for the testable time bucket in the dedup key (H-1).
+        // If the .NET host already registered one — the last registration
+        // is the same, harmless.
         services.AddSingleton(TimeProvider.System);
 
         services.AddSingleton<IDeduplicationStore, RedisDeduplicationStore>();

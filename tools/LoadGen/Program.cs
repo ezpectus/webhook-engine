@@ -2,15 +2,15 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
-// Генератор нагрузки для /events.
-//   dotnet run --project tools/LoadGen -- --webhook <guid> [опции]
-// Опции: --url (def http://localhost:5269) · --rps (def 50)
-//        --seconds (def 30) · --burst (x5 на тик) · --dup (доля дублей, def 0)
-// 202 = accepted, 200 = duplicate — счётчики показывают dedup живьём.
+// Load generator for /events.
+//   dotnet run --project tools/LoadGen -- --webhook <guid> [options]
+// Options: --url (def http://localhost:5269) · --rps (def 50)
+//          --seconds (def 30) · --burst (x5 per tick) · --dup (dup ratio, def 0)
+// 202 = accepted, 200 = duplicate — counters show dedup live.
 
 var url = GetArg("--url", "http://localhost:5269")!;
 var webhook = GetArg("--webhook", null)
-    ?? throw new ArgumentException("нужен --webhook <guid>");
+    ?? throw new ArgumentException("--webhook <guid> required");
 var rps = int.Parse(GetArg("--rps", "50")!);
 var seconds = int.Parse(GetArg("--seconds", "30")!);
 var burst = args.Contains("--burst");

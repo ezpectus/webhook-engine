@@ -18,8 +18,8 @@ public sealed class DeliveryWorker(
     {
         var parallelism = config.GetValue("Delivery:WorkerParallelism", 4);
 
-        // N параллельных читателей канала: каждый элемент достаётся ровно
-        // одному воркеру. Упор внешний HTTP, а не CPU — 4 по дефолту.
+        // N parallel channel readers: each item goes to exactly one worker.
+        // Bottleneck is outbound HTTP, not CPU — 4 by default.
         var loops = Enumerable.Range(0, parallelism)
             .Select(_ => RunLoopAsync(stoppingToken));
         await Task.WhenAll(loops);
@@ -42,7 +42,7 @@ public sealed class DeliveryWorker(
             }
             catch (Exception ex)
             {
-                // Событие остаётся InFlight — stale-lease в sweeper вернёт его в Pending.
+                // Event stays InFlight — the sweeper's stale lease returns it to Pending.
                 logger.LogError(ex, "Delivery failed to process event {EventId}", ev.Id);
             }
         }
@@ -60,16 +60,17 @@ public sealed class DeliveryWorker(
         CancellationToken ct)
     {
         var tracked = await db.Events.FindAsync([ev.Id], ct);
-        // Канал мог доставить устаревший элемент: пока он ждал, событие
-        // уже доставлено, реплеировано или задедлеттерено. В очередь
-        // попадают только InFlight — всё остальное пропускаем (В-ревью).
+        // The channel may hand out a stale item: while it waited, the event
+        // could have been delivered, replayed or dead-lettered. Only
+        // InFlight enters the queue — everything else is skipped (B-review).
         if (tracked is null || tracked.Status != EventStatus.InFlight)
             return;
 
         var webhook = await db.Webhooks.FindAsync([ev.WebhookId], ct);
 
-        // D7: задержка по rate limit — тот же механизм отложенной отправки,
-        // что и ретрай. Это НЕ попытка: AttemptCount не трогаем, попытку не пишем.
+        // D7: rate-limit delay uses the same deferred-send mechanism as
+        // retries. This is NOT an attempt: AttemptCount untouched, no
+        // attempt row written.
         if (webhook is not null && webhook.IsActive)
         {
             var wait = await limiter.AcquireDelayAsync(webhook.Id, webhook.RateLimitPerSecond, ct);
@@ -127,7 +128,7 @@ public sealed class DeliveryWorker(
             metrics.SendRetryable();
             if (backoff.IsExhausted(tracked.AttemptCount))
             {
-                // Ретраи исчерпаны — терминальное состояние, ручной разбор.
+                // Retries exhausted — terminal state, manual triage.
                 tracked.Status = EventStatus.DeadLettered;
                 db.DeadLetters.Add(new DeadLetterItem
                 {
@@ -139,18 +140,20 @@ public sealed class DeliveryWorker(
             else
             {
                 tracked.Status = EventStatus.RetryScheduled;
-                // attemptCount-1: ComputeDelay ждёт 0-based номер попытки,
-                // а счётчик уже инкрементирован (1-я неудача → 1). Было
-                // ComputeDelay(AttemptCount) → первая задержка 2·base вместо base.
+                // attemptCount-1: ComputeDelay expects a 0-based attempt
+                // number, and the counter is already incremented (1st
+                // failure → 1). Was ComputeDelay(AttemptCount) → first
+                // delay was 2·base instead of base.
                 tracked.NextAttemptAt = now + backoff.ComputeDelay(tracked.AttemptCount - 1);
             }
         }
 
         await db.SaveChangesAsync(ct);
 
-        // Куча — ускоритель поверх PG: сначала durable-запись, потом schedule.
-        // Порядок безопасен: heap-запись без PG — claim не пройдёт и запись
-        // тихо протухнет; PG без heap — sweeper-скан восстановит.
+        // The heap is an accelerator over PG: durable write first, then
+        // schedule. Order is safe: a heap entry without PG — the claim
+        // fails and the entry quietly expires; PG without heap — the
+        // sweeper scan restores it.
         if (tracked.Status == EventStatus.RetryScheduled && tracked.NextAttemptAt is { } next)
             await scheduler.ScheduleAsync(ev.Id, next, ct);
 

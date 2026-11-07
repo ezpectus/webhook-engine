@@ -32,7 +32,7 @@ public class ConsistentHashRingTests
         var moved = keys.Count(k => before[k] != ring.GetNode(k));
         var fraction = (double)moved / keys.Count;
 
-        // 3→4 узла: новый забирает ~25%. Допуск широкий из-за дискретности колец.
+        // 3→4 nodes: the new one takes ~25%. Wide tolerance — rings are discrete.
         Assert.InRange(fraction, 0.10, 0.40);
     }
 

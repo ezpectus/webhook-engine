@@ -7,7 +7,7 @@ namespace WebhookEngine.Core.RateLimiting;
 /// </summary>
 public sealed class TokenBucket
 {
-    private const double Epsilon = 1e-9; // допуск на дрейф double на границе токена
+    private const double Epsilon = 1e-9; // tolerance for double drift at the token boundary
 
     private readonly double _capacity;
     private readonly double _refillPerSecond;
@@ -25,9 +25,9 @@ public sealed class TokenBucket
         _refillPerSecond = refillPerSecond;
         _time = time ?? TimeProvider.System;
 
-        // Старт полным: новый webhook сразу получает бюджет на всплеск —
-        // «подключил → пошли события» не ждёт накопления токенов.
-        // Пустое ведро задержало бы первые N событий без выигрыша.
+        // Start full: a new webhook gets its burst budget right away —
+        // "connected → events flow" doesn't wait for tokens to accrue.
+        // An empty bucket would delay the first N events for no gain.
         _tokens = capacity;
         _lastRefill = _time.GetUtcNow();
     }
@@ -40,7 +40,7 @@ public sealed class TokenBucket
             Refill();
             if (_tokens >= 1 - Epsilon)
             {
-                _tokens = Math.Max(0, _tokens - 1); // клэмп: микродрейф не уводит в минус
+                _tokens = Math.Max(0, _tokens - 1); // clamp: micro-drift can't go negative
                 return true;
             }
             return false;
@@ -59,12 +59,12 @@ public sealed class TokenBucket
         }
     }
 
-    // Ленивое пополнение: досчитываем только при обращении — без таймера.
+    // Lazy refill: accrue only on access — no timer.
     private void Refill()
     {
         var now = _time.GetUtcNow();
         var elapsed = now - _lastRefill;
-        if (elapsed <= TimeSpan.Zero) return;   // один тик или часы пошли назад
+        if (elapsed <= TimeSpan.Zero) return;   // same tick or clock moved backwards
 
         _tokens = Math.Min(_capacity, _tokens + elapsed.TotalSeconds * _refillPerSecond);
         _lastRefill = now;
@@ -76,18 +76,19 @@ public sealed class TokenBucket
 
 
 /*
- * ── Версия юзера (TASK-004, hands-on) — сохранена для сравнения ──
+ * ── User's version (TASK-004, hands-on) — kept for comparison ──
  *
- * Вердикт ревью: логика полностью верная, эквивалентна рабочей версии.
- * Реальные решения, сделанные правильно: старт полным ведром, ранний
- * выход на elapsed <= 0, Math.Min(capacity), Refill внутри lock.
+ * Review verdict: logic fully correct, equivalent to the working version.
+ * Real decisions made right: start-full bucket, early exit on
+ * elapsed <= 0, Math.Min(capacity), Refill inside the lock.
  *
- * Баги, найденные при оформлении:
- *   • поверх реализаций остались stub-методы (throw NotImplementedException)
- *     → дубликаты сигнатур, не компилировалось (CS0111)
- *   • строгое `>= 1` на double → дрейф 0.9999999999 → ложный отказ;
- *     фикс — Epsilon + клэмп Math.Max(0, ...) (замечание Gemini верное,
- *     но лекарство — не decimal: дробь секунд непредставима точно)
+ * Bugs found during write-up:
+ *   • stub methods (throw NotImplementedException) left alongside the
+ *     real ones → duplicate signatures, wouldn't compile (CS0111)
+ *   • strict `>= 1` on a double → 0.9999999999 drift → false rejection;
+ *     fix — Epsilon + Math.Max(0, ...) clamp (Gemini's remark was right,
+ *     but the cure isn't decimal: fractional seconds aren't
+ *     representable exactly)
  *
 public sealed class TokenBucketUserVersion
 {

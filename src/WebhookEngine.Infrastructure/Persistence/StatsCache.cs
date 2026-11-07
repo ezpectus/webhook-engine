@@ -49,8 +49,8 @@ public sealed class StatsCache
             var depth = await db.Events.CountAsync(
                 e => e.Status != Core.Models.EventStatus.Delivered &&
                      e.Status != Core.Models.EventStatus.DeadLettered, ct);
-            // delivered берём из byStatus — отдельный COUNT был бы лишним
-            // сканом (ревью 26.10): значение уже есть в словаре группировки.
+            // delivered comes from byStatus — a separate COUNT would be an
+            // extra scan (review 26.10): the group-by dictionary already has it.
             var delivered = byStatus.GetValueOrDefault(
                 Core.Models.EventStatus.Delivered.ToString(), 0);
 
