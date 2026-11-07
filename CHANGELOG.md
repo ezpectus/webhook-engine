@@ -44,7 +44,7 @@
   `dedup-flow.mmd` (+вставки в system.md и architecture.md),
   `schema.sql` ← `ClaimVersion` + L4-решение, incidents.md ← разбор
   3 ревью-багов H-1, README ← honest-window + статус, PLAN ← журнал.
-- `700253b` — **[docs]** вопросы закрыты окончательно: checkpoint-ответы
+- `9c47d78` — **[docs]** вопросы закрыты окончательно: checkpoint-ответы
   H-1 вписаны в журнал PLAN.md (straddle-дубль: Redis down + стык
   бакета; «навсегда» = баг контракта окна); строка «TTL истёк» в
   карте границ переписана под новое событие; канонические ответы к
