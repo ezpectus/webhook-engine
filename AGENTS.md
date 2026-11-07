@@ -134,11 +134,17 @@ webhook sending · React-дашборд · docker-compose · генератор 
 ## Окружение (факты о машине юзера)
 
 - **Docker Desktop жрёт диск C:** `docker_data.vhdx` в
-  `%LOCALAPPDATA%\Docker\wsl\disk\` — 16 ГБ на 2026-10-31 (образы +
-  volumes + build-кеш). Файл сам не ужимается после очистки:
-  рецепт — `docker system prune -a --volumes` ⚠️ сносит `pgdata`
-  (данные БД!) + `wsl --shutdown`, затем compact диска. Мягкий
-  вариант — `docker image prune` (только висячие образы).
+  `%LOCALAPPDATA%\Docker\wsl\disk\` — 16 ГБ на 2026-11-07. Файл сам
+  не ужимается после очистки. Рецепт: `docker system prune -af`
+  (без `--volumes` — сохранит `pgdata` и чужие тома; с `--volumes`
+  ⚠️ сносит `pgdata` = данные БД) + `wsl --shutdown`, затем compact:
+  админ `diskpart /s <script>` (готовый скрипт —
+  `%TEMP%\compact_docker_vhdx.txt`) или `Optimize-VHD -Mode Full`
+  (Hyper-V-модуль есть, но тоже требует админ). Sparse VHD
+  НЕ включать: `wsl --manage docker-desktop --set-sparse true` WSL
+  2.7 блокирует флагом `--allow-unsafe` — риск коррупции данных.
+  Дистрибутив `docker-desktop-data` в современном Docker Desktop
+  отсутствует — vhdx принадлежит `docker-desktop`.
 - Второй WSL-диск: `%LOCALAPPDATA%\wsl\*\ext4.vhdx` ~2.3 ГБ.
 - Репо сам лёгкий (~150 МБ): `node_modules`/`bin`/`obj`
   регенерируются — `npm ci`, `dotnet build`.
