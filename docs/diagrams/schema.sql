@@ -19,14 +19,16 @@ CREATE TABLE "Events" (
     "Payload" jsonb NOT NULL,
     "Status" integer NOT NULL,          -- 0 Pending · 1 InFlight · 2 RetryScheduled · 3 Delivered · 4 DeadLettered
     "AttemptCount" integer NOT NULL,
+    "ClaimVersion" integer NOT NULL DEFAULT 0,  -- lease-versioning для H-3 (optimistic claim guard)
     "NextAttemptAt" timestamptz,        -- durable-расписание ретраев
     "DeliveredAt" timestamptz,
     "CreatedAt" timestamptz NOT NULL,
     "UpdatedAt" timestamptz NOT NULL    -- lease-метка для stale-reclaim
 );
+-- H-1: ключ = sha256(wh:payload:bucket) — unique держит окно, не вечность
 CREATE UNIQUE INDEX "IX_Events_IdempotencyKey" ON "Events" ("IdempotencyKey");
 CREATE INDEX "IX_Events_WebhookId" ON "Events" ("WebhookId");
--- кормит due-scan sweeper'а; кандидат на partial index (вопрос L4):
+-- кормит due-scan sweeper'а; L4 решён EXPLAIN'ом (TASK-010): полный держим
 CREATE INDEX "IX_Events_Status_NextAttemptAt" ON "Events" ("Status", "NextAttemptAt");
 
 CREATE TABLE "DeliveryAttempts" (
@@ -52,8 +54,8 @@ CREATE TABLE "DeadLetters" (
 CREATE INDEX "IX_DeadLetters_EventId" ON "DeadLetters" ("EventId");
 CREATE INDEX "IX_DeadLetters_DeadLetteredAt" ON "DeadLetters" ("DeadLetteredAt");
 
--- Опционально (решение L4, после EXPLAIN на живых данных):
--- DROP INDEX "IX_Events_Status_NextAttemptAt";
+-- L4 решён (EXPLAIN, TASK-010): partial-варианты ниже не нужны —
+-- полный индекс покрывает оба скана за ~0.07мс. Оставлено как история.
 -- CREATE INDEX "IX_Events_DueScan" ON "Events" ("NextAttemptAt")
 --     WHERE "Status" IN (0, 2);        -- только живые статусы
 -- CREATE INDEX "IX_Events_StaleScan" ON "Events" ("UpdatedAt")

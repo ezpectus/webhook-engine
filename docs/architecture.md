@@ -79,7 +79,8 @@ events ───> │ Ingest   │─> │ Dedup      │─> │ Queue        �
 ```
 
 - **Ingest API** — event intake, validation, event id issuance.
-- **Dedup** — Redis `SET NX` on the event's SHA256 key, dedup window.
+- **Dedup** — rolling window: Redis `SET NX EX` content marker (eventId
+  as the value) + a bucketed SHA256 key under the PG unique index.
 - **Queue** — bounded `Channel`, backpressure policy on overflow.
 - **Dispatcher/workers** — worker pool; consistent-hash webhook
   distribution across nodes at horizontal scale.
@@ -112,10 +113,30 @@ events ───> │ Ingest   │─> │ Dedup      │─> │ Queue        �
 - `delivery_attempts` — attempt history: response code, error, duration
 - `dead_letter_items` — Reason, DeadLetteredAt, ReplayedAt
 
-**Double dup protection:** Redis `SET NX` is the fast filter (TTL
-window, keys can be lost on cache restart); the PG unique index is
-the hard boundary: the same `IdempotencyKey` never writes twice.
-First layer is about speed, second — about correctness.
+**Double dup protection (H-1, rolling window):** the Redis marker
+`dedup:sha256(webhookId:payload)` → `eventId` is the fast filter —
+a duplicate answer costs zero PG reads; `SET NX EX` anchors the TTL
+at first sight. The PG unique index holds the hard boundary on a
+**bucketed** key `sha256(webhookId:payload:bucket)` —
+`bucket = unixTimeSeconds / windowSeconds`. An index can't be
+time-relative, so time rides inside the key: identical content in the
+next window is a *new* event, not a permanent dedup. Redis down =
+fail-open; the only residual dup needs Redis down *and* two POSTs
+straddling a bucket boundary — bounded and documented.
+
+```mermaid
+flowchart TD
+    A[POST /events] --> B{webhook + valid JSON?}
+    B -- no --> R4[400]
+    B -- yes --> C["redisKey = sha256(wh:payload)<br/>pgKey = sha256(wh:payload:bucket)"]
+    C --> D{"GET dedup:&lt;redisKey&gt;"}
+    D -- "hit: eventId" --> R2["200 duplicate — id from Redis value"]
+    D -- "miss / Redis down" --> E["INSERT IdempotencyKey = pgKey"]
+    E -- "23505" --> R5["200 duplicate — hard boundary"]
+    E -- ok --> F["claim InFlight → enqueue"]
+    F --> G["SET dedup:&lt;redisKey&gt; = eventId NX EX window"]
+    G --> R3[202 accepted]
+```
 
 **Open schema questions** (resolved in tickets):
 - ~~Lease/ownership~~ — implemented: `InFlight` + `UpdatedAt`, expiry
@@ -123,9 +144,10 @@ First layer is about speed, second — about correctness.
   see guide.md "Known edges"
 - Deferred-retry storage: currently `NextAttemptAt` swept by the
   sweeper; in-memory heap came with TASK-005 (acceleration, PG stays truth)
-- What goes into `IdempotencyKey` defines "dup after the window"
-  behaviour — resolved: sha256(webhookId + payload); client header
-  is an evolution
+- ~~What goes into `IdempotencyKey`~~ — resolved (H-1): PG key =
+  `sha256(wh:payload:bucket)` inside the window; Redis keeps the
+  stable content key with rolling TTL. Client `Idempotency-Key`
+  header is the next evolution (H-2)
 
 ## Roadmap (stages)
 

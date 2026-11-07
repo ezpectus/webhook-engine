@@ -10,8 +10,12 @@ endpoints — reliably, under load, and honestly about failure.
 
 - **At-least-once delivery** — an accepted event is persisted before it's
   acknowledged. Duplicates are acceptable by design; loss is not.
-- **Idempotent ingest** — dedup via Redis `SET NX` on a SHA256 key, with a
-  Postgres unique constraint as the hard boundary underneath.
+- **Idempotent ingest, honest window** — rolling dedup: a Redis
+  `SET NX` content marker stores the original `eventId` (TTL from
+  first sight → duplicate answers cost zero PG reads), while a
+  Postgres unique constraint on a *time-bucketed* key holds the hard
+  boundary. Same content in the next window = a new event — the way
+  Stripe-style idempotency actually works.
 - **Backpressure** — bounded channels with an explicit overflow policy
   instead of silent OOM.
 - **Per-webhook rate limiting** — token bucket per endpoint, so receivers
@@ -107,10 +111,11 @@ lease expiry mid-send) — every guarantee held. Three LoadGen runs
 loss after accept. The evidence-backed duplicate/loss map lives
 in [PLAN.md](PLAN.md#failure-boundary-map-where-duplicates-where-loss-proven-live).
 
-Remaining: optional hands-on tasks (H-1..H-3) and the scale wave
-(Redis-backed limiter, leader election, multi-instance). See
-[docs/tasks.md](docs/tasks.md) for the backlog and
-[docs/next.md](docs/next.md) for the construction queue.
+Remaining: hands-on tasks H-2 (client `Idempotency-Key` header) and
+H-3 (lease-versioned claims) — H-1 (honest dedup window) shipped and
+verified live — plus the scale wave (Redis-backed limiter, leader
+election, multi-instance). See [docs/tasks.md](docs/tasks.md) for the
+backlog and [docs/next.md](docs/next.md) for the construction queue.
 
 ## License
 

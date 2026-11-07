@@ -1,0 +1,23 @@
+flowchart TD
+    A[POST /events] --> B{webhook exists<br/>+ active + valid JSON?}
+    B -- no --> R4[400]
+    B -- yes --> C["redisKey = sha256(wh:payload)<br/>pgKey = sha256(wh:payload:bucket)"]
+    C --> D{"GET dedup:&lt;redisKey&gt;"}
+    D -- "hit: eventId" --> R2["200 duplicate<br/>same eventId — from Redis value, no PG read"]
+    D -- "miss / Redis down<br/>fail-open" --> E["INSERT Events<br/>IdempotencyKey = pgKey"]
+    E -- "23505 unique<br/>conflict" --> R5["200 duplicate<br/>lookup by pgKey — hard boundary"]
+    E -- ok --> F["atomic claim → InFlight<br/>+ enqueue"]
+    F --> G["SET dedup:&lt;redisKey&gt; = eventId<br/>NX EX window — TTL anchored at first sight"]
+    G --> R3[202 accepted]
+
+    subgraph W["Dedup window (rolling)"]
+        N1["Redis marker: fast path, expires window after first sight"]
+        N2["PG bucket key: hard boundary — same content in the next<br/>bucket = a NEW event; index can't be time-relative"]
+    end
+    D -.-> N1
+    E -.-> N2
+
+    subgraph Edge["Accepted degradation"]
+        N3["Redis down + two POSTs straddling a bucket boundary →<br/>both insert — a legal ingest dup (bounded, documented)"]
+    end
+    D -.-> N3

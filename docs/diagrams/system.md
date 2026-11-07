@@ -1,7 +1,8 @@
 # Диаграммы системы
 
 Файлы-источники (редактируемые): `mmd/` — mermaid (`system.mmd`
-архитектура, `db.mmd` ER-схема, `classes.mmd` карта классов); `io/` —
+архитектура, `db.mmd` ER-схема, `classes.mmd` карта классов,
+`dedup-flow.mmd` поток дедупликации H-1); `io/` —
 draw.io (`system.drawio`, `db.drawio`, `classes.drawio`); `schema.sql`
 — DDL. Mermaid рендерится прямо на GitHub; drawio открывается в
 app.diagrams.net или расширением VS Code.
@@ -74,6 +75,27 @@ flowchart LR
 событие непотеряемо только после записи в `PG`. Всё, что до неё —
 либо отвергнуто клиенту, либо клиент ретраит сам.
 
+## Dedup-поток (H-1, rolling-окно)
+
+```mermaid
+flowchart TD
+    A[POST /events] --> B{webhook + валидный JSON?}
+    B -- нет --> R4[400]
+    B -- да --> C["redisKey = sha256(wh:payload)<br/>pgKey = sha256(wh:payload:bucket)"]
+    C --> D{"GET dedup:&lt;redisKey&gt;"}
+    D -- "hit: eventId" --> R2["200 duplicate<br/>id из значения Redis, PG не тронута"]
+    D -- "miss / Redis down<br/>fail-open" --> E["INSERT IdempotencyKey = pgKey"]
+    E -- "23505" --> R5["200 duplicate<br/>жёсткая граница"]
+    E -- ok --> F["claim InFlight → enqueue"]
+    F --> G["SET dedup:&lt;redisKey&gt; = eventId<br/>NX EX window — TTL от первого вида"]
+    G --> R3[202 accepted]
+```
+
+Redis-маркер — быстрый путь (окно катится TTL от первого вида);
+бакетный PG-ключ — жёсткая граница окна (индекс не умеет «по времени»,
+время зашито в ключ). Остаточная деградация: Redis мёртв + два POST'а
+по разные стороны стыка бакета → оба вставятся — легальный дубль.
+
 ## Схема БД (ER)
 
 ```mermaid
@@ -98,6 +120,7 @@ erDiagram
         jsonb Payload
         int Status "Pending·InFlight·RetryScheduled·Delivered·DeadLettered"
         int AttemptCount
+        int ClaimVersion "lease-version для H-3 (optimistic claim)"
         timestamptz NextAttemptAt "дurable-расписание; IDX(Status,NextAttemptAt)"
         timestamptz DeliveredAt
         timestamptz CreatedAt
@@ -126,7 +149,10 @@ erDiagram
 
 Заметки по схеме:
 - `IdempotencyKey` UNIQUE — последняя граница правильности (Redis
-  fail-open → индекс решает).
-- `(Status, NextAttemptAt)` — кормит due-scan sweeper'а; кандидат на
-  partial index `WHERE Status IN (Pending, RetryScheduled)` — вопрос L4.
+  fail-open → индекс решает). H-1: ключ несёт бакет времени —
+  unique держит окно, а не вечность.
+- `(Status, NextAttemptAt)` — кормит due-scan sweeper'а; L4 решён
+  EXPLAIN'ом (TASK-010) — полный индекс держим, partial не нужен.
 - `UpdatedAt` — и lease, и «когда что-то трогали» — двойная роль.
+- `ClaimVersion` — колонка под H-3: claim инкрементит её, воркер
+  пишет результат только под своей версией (stale-claim guard).
