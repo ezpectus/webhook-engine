@@ -30,7 +30,7 @@ export interface Metrics {
 export interface EngineEvent {
   id: string
   webhookId: string
-  status: string
+  status: number // EventStatus enum serialized as int by the API
   attemptCount: number
   nextAttemptAt: string | null
   updatedAt: string

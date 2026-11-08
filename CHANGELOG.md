@@ -60,6 +60,12 @@
   `docs/screenshots/dashboard.png`, `dashboard/README.md` переписан
   (был Vite-бойлерплейт), guide.md ← пост-H-1 dedup-путь,
   docs/README ← h2/h3-walkthrough и screenshots.
+- `—` — **[D]** редизайн дашборда под «ops-панель», а не шаблон:
+  статусы — цветные бейджи (были сырые int'ы enum'а!), фильтр по
+  статусу, колонка webhook, id копируются кликом, HTTP-коды в
+  attempts цветные, шапка с timestamp обновления, честный индикатор
+  фида. `api.ts` тип `status: string` → `number` (тип врал). Скриншот
+  переснят с живым фидом.
 
 ## 2026-11-04 — подготовка H-полосы [docs]
 

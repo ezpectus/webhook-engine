@@ -12,12 +12,17 @@ it performs is DLQ replay.
 | Panel | Source | What it tells you |
 | --- | --- | --- |
 | Status cards (Pending / InFlight / RetryScheduled / Delivered / DeadLettered + `DLQ live`) | `GET /stats` (3s `StatsCache` snapshot) | queue shape; `DLQ live` is the accumulating quarantine |
-| Metrics strip | `GET /metrics` | `dedup_hit_ratio`, `delivery_retry_rate`, rejected events, limiter pauses, `StaleReclaims` (the "silent worker death" detector) |
-| Recent events (30) | `GET /events?take=30` | newest events with status + attempt count |
-| Attempts detail | `GET /events/{id}` | click a row → every send: HTTP code, ms, error |
-| Dead letters | `GET /deadletters` | quarantined events + reason; **replay** button → `POST /deadletters/{id}/replay` (bypasses dedup, resets attempt budget) |
-| Live feed (50) | SignalR `/hubs/status`, message `"status"` | status transitions as the worker writes them |
-| Header dot | SignalR connection state | green = live feed connected |
+| Metrics strip | `GET /metrics` | `dedup_hit_ratio`, `delivery_retry_rate`, queue depth, rejected events, limiter pauses, `StaleReclaims` (the "silent worker death" detector) |
+| Recent events (30) | `GET /events?take=30` | newest events — status **badges**, webhook id, attempt count; status filter dropdown |
+| Attempts detail | `GET /events/{id}` | click a row → every send: HTTP code (colored), ms, error |
+| Dead letters | `GET /deadletters` | quarantined events + reason; **replay** button → `POST /deadletters/{id}/replay` (bypasses dedup, resets attempt budget); replayed rows stay visible as audit |
+| Live feed (50) | SignalR `/hubs/status`, message `"status"` | status transitions as the worker writes them, badge-colored |
+| Header | — | refresh timestamp + SignalR connection indicator |
+
+Usability details: statuses are semantic badges (amber = retrying,
+red = dead-lettered, etc.); event ids are **click-to-copy**; event
+rows are clickable for attempt history; HTTP codes in attempts are
+colored by outcome.
 
 Polling: `refresh()` every 2s (stats/metrics/events/dlq). The live
 feed is push — no polling. All counters are `EngineMetrics`
