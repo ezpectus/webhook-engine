@@ -11,7 +11,7 @@ endpoints — reliably, under load, and honestly about failure.
 > attacked with chaos failures until it held — and every decision,
 > bug and trade-off is written down (`PLAN.md`, `docs/`). It's for
 > anyone who wants to see dedup, backpressure, retries and DLQ
-> actually work, not just read the theory. **~120 files, ~9k lines
+> actually work, not just read the theory. **~140 files, ~9.9k lines
 > of source + docs.** Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## What it guarantees
@@ -116,6 +116,9 @@ chronological attempts, DLQ, replay, SignalR negotiate):
 ```bash
 node tests/smoke.mjs                    # API on :5269
 API=http://localhost:8080 DASH=http://localhost:3000 node tests/smoke.mjs
+# full compose: the API container reaches the receiver by service name
+API=http://localhost:8080 DASH=http://localhost:3000 \
+RECEIVER=http://mockreceiver:5005 node tests/smoke.mjs
 ```
 
 To see the failure paths live, point a webhook at

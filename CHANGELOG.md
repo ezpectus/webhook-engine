@@ -9,6 +9,24 @@
 
 ---
 
+## 2026-11-08 — финальный прогон: полный compose + smoke [D/docs]
+
+Полный `docker compose up --build` (postgres + redis + api +
+dashboard + mockreceiver): **20/20 smoke-чеков зелёных** на :8080,
+end-to-end доставка подтверждена — API-контейнер доставил событие
+в mockreceiver по имени сервиса (attempt + запись в приёмнике,
+статус Delivered). Дашборд-nginx: `/health`/`/stats`/SignalR
+negotiate через WS-upgrade — все 200.
+
+- `RECEIVER`-параметр в `tests/smoke.mjs` — в композе API ходит в
+  приёмник по `http://mockreceiver:5005`, локально — по
+  `localhost:5005`; регистрируемый URL вебхука теперь
+  конфигурируется.
+- README: статистика обновлена (~140 файлов, ~9.9k строк),
+  compose-вариант smoke задокументирован.
+
+---
+
 ## 2026-11-08 — strict TypeScript + lint-чистка дашборда [D]
 
 - `5af2a56` — **[D]** `tsconfig.app.json`: включён `strict` +

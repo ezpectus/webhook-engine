@@ -6,10 +6,15 @@
 //   node tests/smoke.mjs
 //   API=http://host:port DASH=http://host:port node tests/smoke.mjs
 //
+// RECEIVER = the webhook URL the *API process* must dial. Locally it is
+// the host-published port; inside docker compose the API resolves the
+// mockreceiver service by name — pass RECEIVER=http://mockreceiver:5005.
+//
 // Exit 0 = every check passed. Each check prints ok/FAIL.
 
 const API = process.env.API ?? 'http://localhost:5269'
 const DASH = process.env.DASH // optional — skipped when unset/unreachable
+const RECEIVER = process.env.RECEIVER ?? 'http://localhost:5005'
 const tag = `smoke-${Date.now()}`
 
 let failures = 0
@@ -37,7 +42,7 @@ ok('register: rate<=0 rejected', (await post('/webhooks', {
   url: `${API}/hook`, rateLimitPerSecond: 0 })).status === 400)
 
 const wh = await (await post('/webhooks', {
-  url: 'http://localhost:5005/hook', rateLimitPerSecond: 50 })).json()
+  url: `${RECEIVER}/hook`, rateLimitPerSecond: 50 })).json()
 ok('register: returns webhookId', typeof wh.webhookId === 'string')
 
 const list = await (await get('/webhooks')).json()
