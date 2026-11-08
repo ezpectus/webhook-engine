@@ -9,6 +9,20 @@
 
 ---
 
+## 2026-11-08 — strict TypeScript + lint-чистка дашборда [D]
+
+- `5af2a56` — **[D]** `tsconfig.app.json`: включён `strict` +
+  `noUncheckedIndexedAccess` + `noImplicitOverride` и смежные
+  (шаблон был урезан — implicit-any компилировался молча; после
+  включения — ноль ошибок). `primitives.tsx` разделён: helpers
+  `shortId`/`time` → `src/format.ts` (fast-refresh warning).
+  `useDashboardData`: стартовый полл через `queueMicrotask` — нет
+  синхронного setState в теле effect. Удалён мёртвый скаффолд
+  `WebhookEngine.Api.http` (шёл в несуществующий `/weatherforecast`).
+  tsc strict: clean · oxlint: 0 warnings.
+
+---
+
 ## 2026-11-08 — полный аудит: код + live API + сайт + доки [D/docs]
 
 Живая матрица пройдена целиком: регистрация (4 валидационных 400),
