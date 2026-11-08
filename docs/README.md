@@ -21,4 +21,5 @@
 
 Root level: `README.md` (overview) · `PLAN.md` (decision journal +
 metrics + failure-boundary map) · `CHANGELOG.md` (commit → files →
-task) · `AGENTS.md` (rules).
+task) · `AGENTS.md` (rules) · `CONTRIBUTING.md` (ground rules for
+changes + local verification).

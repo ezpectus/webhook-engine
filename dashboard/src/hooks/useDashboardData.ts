@@ -27,7 +27,9 @@ export function useDashboardData(intervalMs: number) {
   }, [])
 
   useEffect(() => {
-    refresh()
+    // First poll deferred off the synchronous effect path — setState
+    // belongs to the fetch resolution, not to the effect body.
+    queueMicrotask(() => void refresh())
     const t = setInterval(refresh, intervalMs)
     return () => clearInterval(t)
   }, [refresh, intervalMs])

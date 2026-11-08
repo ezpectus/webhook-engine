@@ -1,5 +1,6 @@
 import type { DeadLetter } from '../api'
-import { CopyableId, time } from './primitives'
+import { CopyableId } from './primitives'
+import { time } from '../format'
 
 interface Props {
   dlq: DeadLetter[]

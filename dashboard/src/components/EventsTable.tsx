@@ -1,6 +1,7 @@
 import type { EngineEvent } from '../api'
 import { STATUS_NAMES, statusName } from '../status'
-import { CopyableId, shortId, StatusBadge, time } from './primitives'
+import { CopyableId, StatusBadge } from './primitives'
+import { shortId, time } from '../format'
 
 interface Props {
   events: EngineEvent[]

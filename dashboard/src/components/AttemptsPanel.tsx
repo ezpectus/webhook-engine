@@ -1,5 +1,6 @@
 import type { EventDetail } from '../api'
-import { HttpCode, shortId, StatusBadge, time } from './primitives'
+import { HttpCode, StatusBadge } from './primitives'
+import { shortId, time } from '../format'
 
 interface Props {
   event: EventDetail
