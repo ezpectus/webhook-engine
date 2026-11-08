@@ -138,6 +138,13 @@ SweeperService (каждые 2с локально, бережно)
   API-контейнер — приёмник зовётся по имени сервиса
   (`http://mockreceiver:5005/hook`). `tests/smoke.mjs` принимает
   `RECEIVER=` для этого случая.
+- `TokenBucketRateLimiter` держит по корзине на webhookId в
+  `ConcurrentDictionary` — растёт с числом вебхуков, не вытесняет.
+  На сотнях — несущественно; на миллионах — утечка, эвикция —
+  scale-волна.
+- Пул Npgsql (`Maximum Pool Size=80`) должен оставлять запас под
+  `max_connections` — для мульти-инстанса N×80 < лимита или
+  PgBouncer. Замеры — в `docs/database.md`.
 
 ## Запуск
 

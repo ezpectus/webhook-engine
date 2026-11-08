@@ -9,6 +9,18 @@
 
 ---
 
+## 2026-11-08 — хвост сверки: drawio, RU-зеркала, known edges [docs]
+
+- `classes.drawio` — IDeduplicationStore синкнут с H-1 контрактом.
+- `docs/ru/architecture.md` + `docs/ru/next.md` — баннеры
+  «архивный снимок, авторитетны EN» (оба были на pre-H-1 состоянии:
+  dedup без bucket-ключей, роадмап до закрытых тасок).
+- `guide.md` EN+RU — два known edge: рост словаря корзин лимитера
+  (one bucket/webhookId, без эвикции — утечка на миллионах
+  вебхуков) и правило N×80 < max_connections для мульти-инстанса.
+
+---
+
 ## 2026-11-08 — похожие дыры: lint-скрипт + дрейф архитектуры [D/docs]
 
 - `dashboard/package.json`: `lint` через `.bin`-обёртку падал на

@@ -143,6 +143,13 @@ within seconds. The prod direction is in the last column.
   container itself — address the receiver by service name
   (`http://mockreceiver:5005/hook`). `tests/smoke.mjs` takes
   `RECEIVER=` for exactly this.
+- `TokenBucketRateLimiter` keeps one bucket per webhookId in a
+  `ConcurrentDictionary` — grows with the webhook count, never
+  evicts. Trivial at hundreds of webhooks; at millions it's a leak —
+  eviction is a scale-wave item.
+- The Npgsql pool (`Maximum Pool Size=80`) must leave headroom under
+  `max_connections` — multi-instance deployments need N×80 < limit
+  or PgBouncer. Measured boundary in `docs/database.md`.
 
 ## Run it
 
