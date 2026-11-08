@@ -100,13 +100,13 @@ export default function App() {
       </header>
 
       <section className="cards">
-        {STATUS_NAMES.map(s => (
-          <div className="card" key={s}>
+        {STATUS_NAMES.map((s, i) => (
+          <div className={`card c${i}`} key={s}>
             <div className="card-num">{stats?.byStatus[s] ?? 0}</div>
             <div className="card-label">{s}</div>
           </div>
         ))}
-        <div className="card alert">
+        <div className="card c5">
           <div className="card-num">{stats?.liveDeadLetters ?? 0}</div>
           <div className="card-label">DLQ live</div>
         </div>
@@ -183,7 +183,7 @@ export default function App() {
             </section>
           )}
 
-          <h2 style={{ marginTop: 32 }}>Dead letters</h2>
+          <h2 className="section-title">Dead letters</h2>
           <div className="table-wrap">
             <table>
               <thead>
@@ -214,7 +214,7 @@ export default function App() {
             {feed.map((f, i) => (
               <li key={i}>
                 <CopyableId id={f.eventId} />
-                <span className="muted">→</span>
+                <span className="arrow">→</span>
                 <StatusBadge s={f.status} />
                 <span className="t">{f.at.toLocaleTimeString()}</span>
               </li>
