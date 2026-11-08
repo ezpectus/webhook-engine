@@ -9,6 +9,26 @@
 
 ---
 
+## 2026-11-08 — алго-аудит + индекс UpdatedAt + диаграммы [D]
+
+Полный проход сложности: ingest O(log N) (B-tree insert+claim),
+dedup Redis O(1)/PG O(log N), bucket O(1), heap O(log n),
+sweeper-scan O(log N+B), stats O(N) за StatsCache-TTL.
+**Найдена дыра:** `GET /events` сортировал по `UpdatedAt` без
+индекса → seq scan+sort на каждый полл дашборда.
+
+- Миграция `AddEventUpdatedAtIndex` (+ `HasIndex` в DbContext) —
+  применена к живой БД.
+- `docs/database.md` — новая секция «Cost model» со всей таблицей
+  сложности + индекс в реестре.
+- Диаграммы синкнуты: `classes.mmd` — актуальные сигнатуры
+  IDeduplicationStore (GetEventIdAsync/MarkAsync(key,eventId)),
+  ClaimVersion, bigint-PK, StatsCache, StatusFeedHub; `db.drawio` —
+  те же правки (Webhooks/Events имена, bigint PK, nullable,
+  Events→DLQ one-to-many); `schema.sql` + `db.mmd` — IDX UpdatedAt.
+
+---
+
 ## 2026-11-08 — пул-граница: применён Maximum Pool Size=80 [D]
 
 - `appsettings.json` + `appsettings.Development.json` + compose

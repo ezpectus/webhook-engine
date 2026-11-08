@@ -5,12 +5,15 @@ classDiagram
         class NotificationEvent {
             +Guid Id
             +Guid WebhookId
-            +string IdempotencyKey
-            +string Payload
+            +string IdempotencyKey "UNIQUE — hard dedup boundary"
+            +string Payload "jsonb"
             +EventStatus Status
             +int AttemptCount
+            +int ClaimVersion "H-3 lease guard"
             +DateTimeOffset? NextAttemptAt
-            +DateTimeOffset UpdatedAt "lease"
+            +DateTimeOffset? DeliveredAt
+            +DateTimeOffset CreatedAt
+            +DateTimeOffset? UpdatedAt "lease"
         }
         class WebhookEndpoint {
             +Guid Id
@@ -18,18 +21,24 @@ classDiagram
             +string? Secret "HMAC"
             +int RateLimitPerSecond
             +bool IsActive
+            +DateTimeOffset CreatedAt
         }
         class DeliveryAttempt {
-            +int AttemptNumber
+            +long Id "identity"
+            +Guid EventId
+            +int AttemptNumber "resets on replay"
+            +DateTimeOffset AttemptedAt
             +int? ResponseStatusCode
             +string? Error
             +bool Succeeded
             +int DurationMs
         }
         class DeadLetterItem {
+            +long Id "identity"
             +Guid EventId
             +string Reason
-            +DateTimeOffset? ReplayedAt
+            +DateTimeOffset DeadLetteredAt
+            +DateTimeOffset? ReplayedAt "null = live DLQ row"
         }
         class EventStatus {
             <<enumeration>>
@@ -44,8 +53,8 @@ classDiagram
     namespace Core.Abstractions {
         class IDeduplicationStore {
             <<interface>>
-            +IsKnownAsync(key) bool
-            +MarkAsync(key, window)
+            +GetEventIdAsync(key) Guid "Guid.Empty on miss"
+            +MarkAsync(key, eventId, window)
         }
         class IEventQueue {
             <<interface>>
@@ -67,51 +76,56 @@ classDiagram
         }
     }
 
-    namespace Core.Алгоритмы {
+    namespace Core.Algorithms {
         class TokenBucket {
             -double _tokens
             -object _gate
-            +TryTake() bool
+            +TryTake() bool "O(1) lazy refill"
             +TimeUntilAvailable() TimeSpan
         }
         class BackoffPolicy {
-            +ComputeDelay(attempt) TimeSpan
+            +ComputeDelay(attempt) TimeSpan "O(1)"
             +IsExhausted(n) bool
             +MaxAttempts
         }
         class HeapRetryScheduler {
-            -PriorityQueue _heap
-            -Dict~Guid,long~ _versions
+            -PriorityQueue _heap "O(log n) push/pop"
+            -Dict~Guid,long~ _versions "lazy deletion"
             +ScheduleAsync(id, dueAt)
             +ReadDueAsync(now)
         }
         class EngineMetrics {
-            +long DedupHits, SendsOk...
+            +Interlocked counters
+            +DedupHits, SendsOk...
             +StaleReclaims
         }
         class ConsistentHashRing {
-            +AddNode / GetNode(key)
-            "не врезан — scale-волна"
+            +AddNode / RemoveNode / GetNode(key)
+            "GetNode linear O(points); not wired — scale wave"
         }
     }
 
     namespace Infrastructure {
         class WebhookEngineDbContext {
             DbSet Events, Webhooks, Attempts, DeadLetters
-            +индексы в OnModelCreating
+            +indexes in OnModelCreating
         }
         class RedisDeduplicationStore {
-            "fail-open: Redis down → PG решает"
+            "fail-open: Redis down -> PG decides"
+            "stores eventId as value (H-1)"
         }
         class EventQueue {
-            Channel bounded 10k
+            Channel bounded 10k "TryEnqueue + rollback"
         }
         class TokenBucketRateLimiter {
             ConcurrentDict~Guid, TokenBucket~
         }
         class WebhookSender {
             +SendAsync(url, payload, ct, secret?)
-            "HMAC + классификация retryable"
+            "HMAC + retryable classification"
+        }
+        class StatsCache {
+            "snapshot TTL 3s — GROUP BY is O(n) per refresh"
         }
     }
 
@@ -125,14 +139,17 @@ classDiagram
             /stats /metrics /health
         }
         class DeliveryWorker {
-            ×4 readers
-            claim→send→ack→schedule
+            xN readers (Delivery:WorkerParallelism, def 4)
+            claim->send->ack->schedule
         }
         class SweeperService {
-            stale-reclaim + heap/scan → claim→enqueue
+            stale-reclaim + heap/scan -> claim->enqueue
         }
         class SignalRStatusFeed {
-            publish → /hubs/status
+            publish -> /hubs/status
+        }
+        class StatusFeedHub {
+            SignalR hub /hubs/status
         }
     }
 
@@ -144,12 +161,13 @@ classDiagram
 
     WebhookEndpoint "1" --> "0..*" NotificationEvent
     NotificationEvent "1" --> "0..*" DeliveryAttempt
-    NotificationEvent "1" --> "0..1" DeadLetterItem
+    NotificationEvent "1" --> "0..*" DeadLetterItem
     NotificationEvent --> EventStatus
 
     TokenBucketRateLimiter --> TokenBucket : creates
     Endpoints --> IDeduplicationStore
     Endpoints --> IEventQueue
+    Endpoints --> StatsCache
     Endpoints --> WebhookEngineDbContext
     DeliveryWorker --> IEventQueue
     DeliveryWorker --> IRetryScheduler

@@ -87,6 +87,7 @@ gets `ReplayedAt` set. `ReplayedAt IS NULL` = the live DLQ.
 | --- | --- | --- |
 | `IX_Events_IdempotencyKey` UNIQUE | ingest dedup — every accept or duplicate goes through it | the guarantee itself, non-negotiable |
 | `IX_Events_Status_NextAttemptAt` | sweeper due-scan: `(Status IN (0,2)) AND NextAttemptAt <= now` | full index kept — L4 was resolved by EXPLAIN (TASK-010): partial variants added nothing, ~0.07 ms scans |
+| `IX_Events_UpdatedAt` | `GET /events` orders by `UpdatedAt DESC` every dashboard poll — without it every call is a seq scan + sort | added after the complexity pass (below) |
 | `IX_Events_WebhookId` | FK + event listing per webhook | supporting index |
 | `IX_DeliveryAttempts_EventId_AttemptNumber` | event detail panel | history fetch |
 | `IX_DeadLetters_EventId`, `IX_DeadLetters_DeadLetteredAt` | DLQ feed ordering | supporting indexes |
@@ -98,6 +99,33 @@ the composite `(Status, NextAttemptAt)` scan's cost envelope; L4
 analysis showed the full index covers both.
 
 ---
+
+## Cost model — what each hot path actually costs
+
+N = events row count · V = ring points (150/node) · B = sweeper batch (500)
+
+| Path | Cost | Mechanism |
+| --- | --- | --- |
+| Ingest accept | **O(log N)** | Redis GET O(1) → PG INSERT B-tree O(log N) → atomic claim UPDATE by PK O(log N) → Redis SET NX O(1) |
+| Dedup hit via Redis | **O(1)** | one GET, zero PG reads; returns the stored eventId |
+| Dedup hit via PG (23505) | **O(log N)** | failed insert + index seek on the conflicting key |
+| Channel enqueue/dequeue | O(1) | bounded channel, wait-free |
+| Token bucket `AcquireDelayAsync` | O(1) | lazy refill on access — no timer thread |
+| Retry heap `ScheduleAsync` | O(log n) | `PriorityQueue` push; versioned entries give lazy deletion (a reschedule just bumps the version, stale entries skip on dequeue) |
+| `ReadDueAsync` per due item | O(log n) | heap pop + version dict O(1) |
+| ConsistentHashRing `GetNode` | **O(V)** | linear scan — `SortedDictionary` has no successor API. Documented nitpick; not wired in yet (scale wave) |
+| `AddNode` / `RemoveNode` | O(v log v) / O(V) | v virtual-node inserts vs full scan + delete |
+| Sweeper due-scan | O(log N + B) | `(Status, NextAttemptAt)` index range |
+| Stale-reclaim | O(stale) | `ExecuteUpdate` over expired InFlight rows — bounded by live lease count |
+| `GET /events` list | **O(log N + take)** | `ORDER BY UpdatedAt` — indexed (was O(N log N) seq-scan+sort before `IX_Events_UpdatedAt`) |
+| `GET /events/{id}` + attempts | O(log N + attempts) | PK seek + `(EventId, AttemptNumber)` index |
+| `GET /deadletters` | O(log N + 200) | `DeadLetteredAt` index, capped list |
+| `/stats` + `/metrics` | **O(N) per TTL window** | GROUP BY seq scan — behind `StatsCache` (TTL 3s) so the dashboard's 2s poll costs ~1 scan, not 1/request |
+| SignalR publish | O(subscribers) | hub fan-out |
+
+**The one place that was actually wrong:** `GET /events` sorted by an
+unindexed column — every poll did a full seq scan + sort. Fixed by
+`IX_Events_UpdatedAt` (migration `AddEventUpdatedAtIndex`).
 
 ## Behavior under load — measured, not guessed
 

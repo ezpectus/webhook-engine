@@ -30,6 +30,8 @@ CREATE UNIQUE INDEX "IX_Events_IdempotencyKey" ON "Events" ("IdempotencyKey");
 CREATE INDEX "IX_Events_WebhookId" ON "Events" ("WebhookId");
 -- кормит due-scan sweeper'а; L4 решён EXPLAIN'ом (TASK-010): полный держим
 CREATE INDEX "IX_Events_Status_NextAttemptAt" ON "Events" ("Status", "NextAttemptAt");
+-- GET /events сортирует по UpdatedAt DESC — без индекса каждый полл = seq scan
+CREATE INDEX "IX_Events_UpdatedAt" ON "Events" ("UpdatedAt");
 
 CREATE TABLE "DeliveryAttempts" (
     "Id" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

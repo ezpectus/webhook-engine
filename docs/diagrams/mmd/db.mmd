@@ -23,7 +23,7 @@ erDiagram
         timestamptz NextAttemptAt "durable retry schedule; IDX(Status,NextAttemptAt)"
         timestamptz DeliveredAt "nullable"
         timestamptz CreatedAt
-        timestamptz UpdatedAt "nullable — lease mark for stale-reclaim"
+        timestamptz UpdatedAt "nullable — lease mark; IDX feeds ORDER BY"
     }
 
     DeliveryAttempts {
