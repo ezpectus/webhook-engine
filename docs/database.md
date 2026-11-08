@@ -127,9 +127,15 @@ Load tool: `tools/LoadGen` (`--rps --seconds --burst --dup`).
     connection in time
   - recovery: connections drain via Npgsql `IdleLifetime` (~300 s)
     or on process restart
-- Mitigations (choose per deployment): set `Max Pool Size=80` in the
-  connection string to leave headroom, raise `max_connections`, or
-  put PgBouncer in front — this is configuration, not code.
+- **Fixed — `Maximum Pool Size=80`** is now set in
+  `appsettings.json`, `appsettings.Development.json` **and** the
+  compose `ConnectionStrings__Postgres` (all three — the dev file
+  silently overrides the default one, which is how this almost
+  slipped through). Re-verified under the same burst: pool capped
+  at exactly 80 (80 idle + 1 active), `psql` connects freely,
+  `/health` stays `ok`. For multi-instance deployments remember:
+  N instances × 80 must stay under `max_connections` — scale wave
+  item: PgBouncer or a raised limit.
 
 ### Channel-full path (capacity 10 000)
 

@@ -9,6 +9,21 @@
 
 ---
 
+## 2026-11-08 — пул-граница: применён Maximum Pool Size=80 [D]
+
+- `appsettings.json` + `appsettings.Development.json` + compose
+  `ConnectionStrings__Postgres` — `Maximum Pool Size=80` во всех
+  трёх (dev-файл молча перекрывает базовый — первая правка не
+  подействовала, поймано повторным прогоном).
+- Проверено под тем же бёрстом ~2500 rps: пул уперся ровно в 80
+  (80 idle + 1 active в `pg_stat_activity`), `psql` коннектится,
+  `/health` остаётся `ok`. Ранее: сервер 100/100 →
+  `FATAL: too many clients` + degraded health.
+- `docs/database.md` — граница переведена из «документировано» в
+  «исправлено и проверено».
+
+---
+
 ## 2026-11-08 — БД-доки + нагрузочный прогон [docs]
 
 LoadGen против живого стека: **300 rps × 15с — 0 ошибок**
