@@ -32,6 +32,16 @@ attempts-панель, DLQ-кнопки, live-фид, чип соединени�
   авторитетной; режимы MockReceiver в картах файлов (ok/drop
   добавлены); concepts.md — `/stats` через 3с StatsCache;
   скриншот дашборда переснят с живым фидом и DLQ-аудитом.
+- `6e82ae4` — **[docs]** guide + ru/guide — «Known edges» дополнены
+  фактами аудита: payload = строка с JSON, auth отсутствует, lenient
+  `?status=`, connect-timeout первого ingest'а после смерти Redis;
+  CHANGELOG — секция аудита с результатами живой матрицы.
+- `ceb437b` — **[D]** рефактор дашборда в нормальную структуру React:
+  App.tsx-простыня (228 строк) разбита на `components/` (8 файлов) +
+  хуки `useDashboardData` (поллинг теперь `Promise.all` параллельно)
+  и `useStatusFeed` (+`onclose` → честный офлайн-чип); ещё один
+  дубль React-ключа в DLQ (replayed-событие в списке дважды) —
+  ключ `eventId+deadLetteredAt`. Вид не изменён — проверено скрином.
 
 Известные ограничения (задокументированы, не баги): payload — строка
 с JSON внутри (объект в `payload` отклоняется байндером — 400);
