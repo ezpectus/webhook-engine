@@ -36,15 +36,33 @@ docker-compose
 
 ## Architecture
 
-```
-POST /events → validate → dedup (Redis) → persist (PG, Pending)
-             → bounded channel → workers → rate limiter → send
-             → 2xx: Delivered · fail: retry heap → exhausted: DLQ
+```mermaid
+flowchart LR
+    C[Client] -->|POST /events| A[Ingest API]
+    A --> R[(Redis<br/>dedup marker = eventId<br/>rolling window)]
+    A --> PG[(PostgreSQL<br/>truth: events · attempts · DLQ<br/>unique bucketed key)]
+    PG --> Q[(Bounded channel<br/>backpressure)]
+    Q --> W[Workers ×N]
+    W --> RL{Token bucket<br/>per webhook}
+    RL -->|HMAC signed| E[External endpoint]
+    W -->|status feed| H[SignalR hub]
+    H --> D[Dashboard]
+    RL -.->|exhausted| DLQ[(Dead letters<br/>replayable)]
+    SW[Sweeper] -->|due scan + lease reclaim| Q
 ```
 
-Diagrams and the reasoning behind the ordering live in
-[docs/diagrams/system.md](docs/diagrams/system.md) and
-[PLAN.md](PLAN.md).
+Full diagram set (dedup flow, request sequence, status state
+machine, ER schema): [docs/diagrams/system.md](docs/diagrams/system.md).
+Reasoning behind every ordering choice: [PLAN.md](PLAN.md).
+
+## Dashboard
+
+Live ops panel — status cards, engine metrics, event/attempt
+drill-down, DLQ with one-click replay, SignalR live feed:
+
+![dashboard](docs/screenshots/dashboard.png)
+
+Details: [dashboard/README.md](dashboard/README.md).
 
 ## Repository layout
 

@@ -1,23 +1,30 @@
 # Guide — how the system works
 
 For me and for anyone joining. Describes the code **as it is**,
-not as intended. Last updated 2026-10-26: full loop — ingest, dedup,
-queue, parallel workers, rate limiter, backoff+jitter+heap, DLQ,
-HMAC, metrics — verified live on the full compose stack.
+not as intended. Last updated 2026-11-07: H-1 honest dedup window
+shipped (rolling Redis window + bucketed PG key); boundary
+hardening (JSON/http(s) validation, config clamps) verified live.
 
 ## Event path end-to-end
 
 ```
 POST /events
-  → validation (payload, webhook exists and is active)
-  → dedup key = sha256(webhookId + ":" + payload)
-  → Redis IsKnown (fast filter; Redis down → pass through, fail-open)
+  → validation (JSON payload, webhook exists and is active;
+    webhook registration accepts http(s) URLs only)
+  → redisKey = sha256(webhookId + ":" + payload)           — content key
+    pgKey    = sha256(webhookId + ":" + payload + ":" + bucket)
+    bucket   = now / Dedup:WindowHours (TimeProvider)
+  → Redis GET dedup:<redisKey>
+       ├── hit → return stored eventId → 200 "duplicate" (zero PG reads)
+       └── miss / Redis down → pass through (fail-open)
   → backpressure: undelivered >= PendingThreshold → 503
-  → INSERT into PG (unique on IdempotencyKey; 23505 → "duplicate" reply)
+  → INSERT into PG (unique on IdempotencyKey = pgKey;
+    23505 → "duplicate" reply — the hard boundary)
   → TryEnqueue into the bounded channel
-       ├── fits    → Status = InFlight
+       ├── fits    → Status = InFlight (atomic claim)
        └── full    → stays Pending (the sweeper picks it up)
-  → MarkAsync in Redis ("seen" cache, 24h TTL)
+  → Redis SET dedup:<redisKey> = eventId, NX EX windowHours
+    (rolling TTL from first sight; same content next window = new event)
   → 202 Accepted { eventId }
 
 DeliveryWorker (BackgroundService, ×4 parallel readers)
@@ -51,9 +58,15 @@ SweeperService (every 2s locally, gentle)
 
 ## Where the guarantees live (boundary map)
 
-- **Dup at ingest** — `notification_events.IdempotencyKey` unique index
-  (`23505` → `duplicate` reply with the original id). Redis is only
-  an accelerator.
+- **Dup at ingest** — two layers: Redis `SET NX` on the content key
+  (rolling window, answers with the stored eventId, zero PG reads) and
+  the PG unique index on the **time-bucketed** key — the hard boundary
+  (`23505` → `duplicate` with the original id). Same content in the
+  next window = a new event, not a dup.
+- **Residual dup at ingest** — one legal straddle: Redis down +
+  identical POSTs on both sides of a bucket edge → different bucketed
+  keys → both insert. Redis alive closes it; documented in
+  `dedup-flow.mmd` / PLAN.md boundary map.
 - **Loss after acceptance** — impossible: everything undelivered is
   a PG row, the sweeper picks up all `Pending`/`RetryScheduled`.
 - **Dup on delivery** — possible and legal: worker died after the 2xx
@@ -91,7 +104,7 @@ within seconds. The prod direction is in the last column.
 
 | Key | Default | What it does | Prod direction |
 | --- | --- | --- | --- |
-| `Dedup:WindowHours` | 24 | Redis dedup window TTL | Stripe-like, fine |
+| `Dedup:WindowHours` | 24 | dedup window: Redis marker TTL **and** PG bucket granularity (clamped [1h, 8760h], `double`) | Stripe-like, fine |
 | `Queue:Capacity` | 10000 | bounded channel size | smaller — bite earlier |
 | `Queue:PendingThreshold` | 10000 | 503 when undelivered exceed it | grow per SLO |
 | `Sweeper:IntervalSeconds` | 2 | sweep period = retry tick | 5–15s (DB load) |

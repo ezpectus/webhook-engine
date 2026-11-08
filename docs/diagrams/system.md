@@ -2,7 +2,8 @@
 
 Файлы-источники (редактируемые): `mmd/` — mermaid (`system.mmd`
 архитектура, `db.mmd` ER-схема, `classes.mmd` карта классов,
-`dedup-flow.mmd` поток дедупликации H-1); `io/` —
+`dedup-flow.mmd` поток дедупликации H-1, `state-machine.mmd`
+статусы события, `sequence.mmd` жизненный цикл запроса); `io/` —
 draw.io (`system.drawio`, `db.drawio`, `classes.drawio`); `schema.sql`
 — DDL. Mermaid рендерится прямо на GitHub; drawio открывается в
 app.diagrams.net или расширением VS Code.
@@ -95,6 +96,93 @@ Redis-маркер — быстрый путь (окно катится TTL от
 бакетный PG-ключ — жёсткая граница окна (индекс не умеет «по времени»,
 время зашито в ключ). Остаточная деградация: Redis мёртв + два POST'а
 по разные стороны стыка бакета → оба вставятся — легальный дубль.
+
+## Жизненный цикл запроса (sequence)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor C as Client
+    participant A as Ingest API
+    participant R as Redis
+    participant P as PostgreSQL
+    participant Q as Bounded channel
+    participant W as Worker ×N
+    participant L as Rate limiter
+    participant E as Webhook endpoint
+    participant H as StatusHub (SignalR)
+
+    C->>A: POST /events {webhookId, payload}
+    A->>A: validate: webhook exists+active, JSON payload
+    A->>R: GET dedup-key sha256(wh:payload)
+    alt marker hit
+        R-->>A: eventId
+        A-->>C: 200 duplicate {eventId} — zero PG reads
+    else miss / Redis down (fail-open)
+        R-->>A: nil / connection error
+        A->>P: INSERT Event {IdempotencyKey: sha256(wh:payload:bucket), Pending}
+        alt 23505 unique violation
+            P-->>A: conflict
+            A-->>C: 200 duplicate {eventId} — hard boundary
+        else inserted
+            P-->>A: ok
+            A->>P: UPDATE claim → InFlight (atomic)
+            A->>Q: TryEnqueue
+            alt channel full
+                Q-->>A: false → stays Pending (sweeper picks up)
+            end
+            A->>R: SET dedup-key = eventId NX EX window
+            A-->>C: 202 accepted {eventId}
+        end
+    end
+
+    Q->>W: dequeue (only InFlight items)
+    W->>L: wait permit (token bucket per webhook)
+    L-->>W: allowed / wait → RetryScheduled (not an attempt)
+    W->>E: POST payload + HMAC signature (10s timeout)
+    alt 2xx
+        E-->>W: 200
+        W->>P: attempt row + Delivered + DeliveredAt
+    else retryable failure
+        E-->>W: 5xx/429/timeout
+        W->>P: attempt row + RetryScheduled + NextAttemptAt = now + backoff·2^a + jitter
+        Note over W,P: attempts exhausted → DeadLettered + DeadLetterItem(reason)
+    end
+    W->>H: publish status change
+    H-->>C: live feed update (dashboard)
+```
+
+## Машина статусов (`EventStatus`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending : ingest, channel full
+    [*] --> InFlight : ingest, channel accepted
+
+    Pending --> InFlight : sweeper claim<br/>due-scan or heap
+    InFlight --> Delivered : send 2xx<br/>attempt + DeliveredAt
+    InFlight --> RetryScheduled : retryable fail<br/>AttemptCount below max<br/>NextAttemptAt = now + backoff
+    InFlight --> DeadLettered : non-retryable (4xx, bad payload)<br/>or attempts exhausted
+    RetryScheduled --> InFlight : sweeper claim<br/>NextAttemptAt 2264 now
+    InFlight --> Pending : lease expired<br/>stale reclaim (InFlightTimeout)
+    DeadLettered --> Pending : manual replay<br/>AttemptCount → 0, bypass dedup
+
+    Delivered --> [*]
+    DeadLettered --> [*] : terminal (kept as audit)
+
+    note right of InFlight
+        Lease = UpdatedAt timestamp.
+        Crash between send and ack →
+        reclaim → repeated send.
+        Legal at-least-once dup (В7).
+    end note
+
+    note right of RetryScheduled
+        Truth = PG NextAttemptAt.
+        Heap in memory = accelerator only,
+        rebuilt by scan after restart.
+    end note
+```
 
 ## Схема БД (ER)
 

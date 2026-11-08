@@ -50,6 +50,16 @@
   карте границ переписана под новое событие; канонические ответы к
   тренажёру T2/T3/T5/T6/T7; DoD-чекбоксы h1_walkthrough закрыты;
   архивный `docs/ru/PLAN.md` помечен pre-H-1.
+- `—` — **[D+docs]** навигационный facelift + два UI-бага найдены
+  скриншотом: `App.css` никогда не импортировался (дашборд жил на
+  чужом boilerplate-стиле — карточки/гриды были мёртвы) и `api.ts`
+  типизировал counters PascalCase против реального camelCase JSON
+  (3 счётчика молча `undefined`). Новые диаграммы `state-machine.mmd`
+  + `sequence.mmd` (вставлены в system.md, все 6 блоков проверены
+  mmdc), README ← mermaid-схема + живой скриншот
+  `docs/screenshots/dashboard.png`, `dashboard/README.md` переписан
+  (был Vite-бойлерплейт), guide.md ← пост-H-1 dedup-путь,
+  docs/README ← h2/h3-walkthrough и screenshots.
 
 ## 2026-11-04 — подготовка H-полосы [docs]
 

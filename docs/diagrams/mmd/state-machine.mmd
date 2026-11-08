@@ -1,0 +1,27 @@
+stateDiagram-v2
+    [*] --> Pending : ingest, channel full
+    [*] --> InFlight : ingest, channel accepted
+
+    Pending --> InFlight : sweeper claim<br/>due-scan or heap
+    InFlight --> Delivered : send 2xx<br/>attempt + DeliveredAt
+    InFlight --> RetryScheduled : retryable fail<br/>AttemptCount &lt; max<br/>NextAttemptAt = now + backoff
+    InFlight --> DeadLettered : non-retryable (4xx, bad payload)<br/>or attempts exhausted
+    RetryScheduled --> InFlight : sweeper claim<br/>NextAttemptAt &lt;= now
+    InFlight --> Pending : lease expired<br/>stale reclaim (InFlightTimeout)
+    DeadLettered --> Pending : manual replay<br/>AttemptCount → 0, bypass dedup
+
+    Delivered --> [*]
+    DeadLettered --> [*] : terminal (kept as audit)
+
+    note right of InFlight
+        Lease = UpdatedAt timestamp.
+        Crash between send and ack →
+        reclaim → repeated send.
+        Legal at-least-once dup (В7).
+    end note
+
+    note right of RetryScheduled
+        Truth = PG NextAttemptAt.
+        Heap in memory = accelerator only,
+        rebuilt by scan after restart.
+    end note

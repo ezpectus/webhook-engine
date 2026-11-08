@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import * as signalR from '@microsoft/signalr'
+import './App.css'
 import { getStats, getMetrics, getEvents, getEvent, getDeadLetters, replay, type Stats, type Metrics, type EngineEvent, type EventDetail, type DeadLetter } from './api'
 
 const STATUSES = ['Pending', 'InFlight', 'RetryScheduled', 'Delivered', 'DeadLettered']
@@ -79,9 +80,9 @@ export default function App() {
         {metrics && (<>
           <span>dedup hits <b>{(metrics.dedup_hit_ratio * 100).toFixed(1)}%</b></span>
           <span>retry rate <b>{(metrics.delivery_retry_rate * 100).toFixed(1)}%</b></span>
-          <span>rejected <b>{metrics.counters.EventsRejected}</b></span>
-          <span>limiter pauses <b>{metrics.counters.LimiterDelays}</b></span>
-          <span>stale reclaims <b>{metrics.counters.StaleReclaims}</b></span>
+          <span>rejected <b>{metrics.counters.eventsRejected}</b></span>
+          <span>limiter pauses <b>{metrics.counters.limiterDelays}</b></span>
+          <span>stale reclaims <b>{metrics.counters.staleReclaims}</b></span>
         </>)}
       </section>
 

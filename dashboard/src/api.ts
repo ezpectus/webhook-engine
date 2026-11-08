@@ -16,14 +16,14 @@ export interface Metrics {
   queue_depth: number
   dlq_live: number
   counters: {
-    EventsAccepted: number
-    EventsRejected: number
-    DedupHits: number
-    SendsOk: number
-    SendsRetryable: number
-    SendsNonRetryable: number
-    LimiterDelays: number
-    StaleReclaims: number
+    eventsAccepted: number
+    eventsRejected: number
+    dedupHits: number
+    sendsOk: number
+    sendsRetryable: number
+    sendsNonRetryable: number
+    limiterDelays: number
+    staleReclaims: number
   }
 }
 
