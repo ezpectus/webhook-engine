@@ -148,10 +148,15 @@ flowchart TD
   see guide.md "Known edges"
 - Deferred-retry storage: currently `NextAttemptAt` swept by the
   sweeper; in-memory heap came with TASK-005 (acceleration, PG stays truth)
-- ~~What goes into `IdempotencyKey`~~ — resolved (H-1): PG key =
-  `sha256(wh:payload:bucket)` inside the window; Redis keeps the
-  stable content key with rolling TTL. Client `Idempotency-Key`
-  header is the next evolution (H-2)
+- ~~What goes into `IdempotencyKey`~~ — resolved (H-1 + H-2): PG key =
+  `sha256(wh:material:bucket)` inside the window; `material` = client
+  `Idempotency-Key` header when present, else payload. Redis keeps a
+  `"<eventId>|<bodyHash>"` marker with rolling TTL; same key +
+  different body → `409 idempotency_key_reused`
+- ~~Q7 parallel-dup corrupts `AttemptCount`~~ — resolved (H-3):
+  `ClaimVersion` EF concurrency token, bumped on every lease transfer;
+  stale writes die as `DbUpdateConcurrencyException`. Edge: lease
+  timeout must exceed max send duration — else livelock
 
 ## Roadmap (stages)
 

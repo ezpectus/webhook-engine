@@ -116,14 +116,23 @@ SweeperService (каждые 2с локально, бережно)
 
 - ~~Гонка enqueue~~ ✓ починена атомарным claim `Pending→InFlight`
   (`0829b37`)
-- **В7 — параллельный дубль через медленный канал**: backlog > 5 мин →
-  InFlight протухает → reclaim → второй enqueue → два воркера шлют
-  одновременно. Дубль легален; `AttemptCount` теряет инкремент
-  (last-write-wins). Принято и задокументировано как граница; фикс —
-  ручной таск H-3 в `tasks.md` (lease-versioning)
+- ~~В7 — параллельный дубль портит `AttemptCount`~~ ✓ починено H-3:
+  `ClaimVersion` — EF concurrency token, bump на каждой передаче лиза;
+  стейл-запись воркера → `DbUpdateConcurrencyException` → дроп
+  (info-лог, без feed). Параллельный *send* остаётся — легальный
+  at-least-once; версия стережёт запись, не провод.
+- **Лиз < длительность send'а = лайвлок**: `Sweeper:InFlightTimeoutMinutes`
+  обязан превышать max-время отправки (~10 с таймаут сендера).
+  Воспроизведено на лизе 3 с: 26 стейл-записей дропнуто, ноль
+  коррупции — и ноль прогресса; событие вечно в InFlight.
+  Конфигурационный край, не баг.
+- **H-2 — клиентский `Idempotency-Key`**: header заменяет тело как
+  материал ключа (`sha256(wh:key:bucket)`, то же окно). Same key +
+  same body → duplicate с исходным id; same key + другое тело →
+  `409 idempotency_key_reused` (оба пути: Redis-hit и PG-catch;
+  сравнение тела семантическое — jsonb нормализует пробелы).
 - In-memory лимитер и heap — одноинстансные (scale-волна: Redis +
   leader-election)
-- `AttemptCount` не защищён concurrency-токеном — см. В7
 - `payload` — это **строка с JSON внутри**, не вложенный объект:
   `{"payload":{"a":1}}` отсекается model-binding'ом до хэндлера (400).
   Слать `{"payload":"{\"a\":1}"}`.

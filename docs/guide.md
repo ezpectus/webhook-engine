@@ -121,14 +121,25 @@ within seconds. The prod direction is in the last column.
 
 - ~~Enqueue race~~ ✓ fixed by the atomic `Pending→InFlight` claim
   (`0829b37`)
-- **Q7 — parallel dup via a slow channel**: backlog > 5 min →
-  InFlight expires → reclaim → second enqueue → two workers send
-  concurrently. The dup is legal; `AttemptCount` loses an increment
-  (last-write-wins). Accepted and documented as a boundary; the
-  lease-versioning fix is optional hands-on task H-3 in `tasks.md`
+- ~~Q7 — parallel dup corrupts `AttemptCount`~~ ✓ fixed by H-3:
+  `ClaimVersion` is an EF concurrency token bumped on every lease
+  transfer; a stale worker's result-write hits 0 rows →
+  `DbUpdateConcurrencyException` → dropped (info log, no feed).
+  The parallel *send* still happens — that's legal at-least-once;
+  the fix guards the write, not the wire.
+- **Lease < send duration = livelock**: `Sweeper:InFlightTimeoutMinutes`
+  must exceed the max send time (~10 s sender timeout). Reproduced at
+  3 s lease: 26 stale writes dropped, zero corruption — and zero
+  progress; the event ping-pongs InFlight forever. A configuration
+  edge, not a bug.
+- **H-2 — client `Idempotency-Key`**: the header replaces the payload
+  as dedup key material (`sha256(wh:key:bucket)`, same window). Same
+  key + same body → duplicate with original id; same key + different
+  body → `409 idempotency_key_reused` (both Redis-hit and PG-catch
+  paths; body compare is semantic — jsonb normalizes whitespace).
+  Header on retry only = two events — client owns the key.
 - In-memory limiter and heap are single-instance (scale wave: Redis +
   leader election)
-- `AttemptCount` is not protected by a concurrency token — see Q7
 - `payload` is a **string containing JSON**, not a nested object —
   `{"payload":{"a":1}}` is rejected by model binding before the
   handler (400). Send `{"payload":"{\"a\":1}"}`.

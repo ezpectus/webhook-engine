@@ -42,11 +42,11 @@ exists and *some* path will drive it to a terminal status.
 | --- | --- |
 | `Id` uuid PK | event id returned to the caller |
 | `WebhookId` FK → Webhooks | delivery target, cascade |
-| `IdempotencyKey` varchar(64), **UNIQUE** | `sha256(webhookId:payload:bucket)` — the hard dedup boundary. Two inserts, one wins; the loser gets `23505` and reads the winner's id. This is why loss-after-accept is impossible even with Redis dead. |
+| `IdempotencyKey` varchar(64), **UNIQUE** | `sha256(webhookId:material:bucket)` — the hard dedup boundary; `material` = client `Idempotency-Key` when present (H-2), else the payload (H-1). Two inserts, one wins; the loser gets `23505` and reads the winner's id. This is why loss-after-accept is impossible even with Redis dead. |
 | `Payload` jsonb | raw JSON string; never parsed by the engine |
 | `Status` int | the state machine column — see `diagrams/mmd/state-machine.mmd`. `0 Pending · 1 InFlight · 2 RetryScheduled · 3 Delivered · 4 DeadLettered` |
 | `AttemptCount` int | delivery attempts made; **resets semantics**: replayed events keep history, so numbers repeat across cycles — chronological order is by `AttemptedAt`, not this column |
-| `ClaimVersion` int | lease-version column prepared for H-3 (optimistic claim guard against the Q7 parallel-dup window) |
+| `ClaimVersion` int | **EF concurrency token (H-3)** — bumped on every lease transfer (ingest claim, replay, sweeper claim, stale reclaim). A stale worker's `SaveChanges` hits `WHERE ClaimVersion = <old>` → 0 rows → `DbUpdateConcurrencyException` → the whole result-write rolls back. Guards writes, not the wire: parallel sends remain legal at-least-once. Config edge: lease timeout < max send duration (~10 s) → livelock, no write ever lands |
 | `NextAttemptAt` timestamptz? | durable retry schedule — a retry survives a process restart because the *time* lives here, not in memory |
 | `DeliveredAt` timestamptz? | delivery stamp |
 | `CreatedAt` | ingest stamp |

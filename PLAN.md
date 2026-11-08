@@ -146,10 +146,45 @@ repeated sends by design, not failures. The only "dirty" dup is Q7
 
 ## Open questions
 
-- With a content-hash key, "the same event 25h later" is still caught
+- ~~With a content-hash key, "the same event 25h later" is still caught
   by the PG index. Do we want to distinguish "a resend of the same
-  submission" vs "a genuinely new event with the same body"? Needs a
-  client-supplied Idempotency-Key header — an evolution, not MVP
+  submission" vs "a genuinely new event with the same body"?~~ ✓
+  resolved by H-2 (2026-11-08): client `Idempotency-Key` header —
+  see journal below
+
+## Journal — H-2 / H-3 (2026-11-08)
+
+**H-2 — client `Idempotency-Key`:** header present → key material =
+header value (`sha256(wh:key:bucket)`, same `WindowHours` window —
+one dedup horizon for both paths, no fork in semantics); absent or
+whitespace → content path. Same key + same body → `200 duplicate`
+with the original id; same key + different body →
+`409 idempotency_key_reused` — chose 409 over Stripe's 422 because it
+is the canonical REST conflict and the client learns "your key
+collided" instead of "your request was a dup" (silent dedup would
+hide data loss). Marker value is uniform `"<eventId>|<bodyHash>"` on
+both paths. PG-catch compares bodies **semantically**
+(`JsonNode.DeepEquals`) — caught live: jsonb writes `{"a": 1}` back
+for `{"a":1}`, a raw string compare would 409 an identical body.
+Redis-hit path stays byte-exact (the raw fingerprint is the honest
+first-write contract). Who owns idempotency: client owns it when the
+header is sent — a retry that sends the header only on attempt 2
+produces two events by design.
+
+**H-3 — lease-version claim (Q7 fix):** `ClaimVersion` as EF
+concurrency token (`IsConcurrencyToken` — EF appends
+`AND ClaimVersion = @original` to every UPDATE covering the
+event+attempt write atomically in one tx; a rows-affected check
+would split guard from insert and need an explicit tx — more code,
+less safety). Bump rule: *whoever takes or seizes the lease bumps
+it* — claims AND the stale-reclaim (kills a stale write the moment
+the sweeper touches the row). Owner rollbacks (channel-full) don't
+bump — no foreign writer exists there. Stale worker →
+`DbUpdateConcurrencyException` → info log + drop; the version sees
+what the status-filter can't (status still matches, lease doesn't).
+Verified: 3 s lease → 26 dropped stale writes, zero corruption —
+and zero progress: **lease < max send duration is a livelock**,
+documented as a config edge (default 5 min >> ~10 s timeout).
 - ~~Deferred retries: heap on restart~~ ✓ resolved: PG scan is truth,
   heap is an accelerator (TASK-005)
 - ~~Webhook signing~~ ✓ done: `X-Webhook-Signature` (D14)

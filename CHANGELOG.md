@@ -9,6 +9,37 @@
 
 ---
 
+## 2026-11-08 — H-2 + H-3: ядерные таски закрыты [U→D delegated]
+
+**Код** (`Endpoints.cs`, `DeliveryWorker.cs`, `SweeperService.cs`,
+`IDeduplicationStore.cs`, `RedisDeduplicationStore.cs`,
+`WebhookEngineDbContext.cs`, миграция `AddClaimVersionConcurrencyToken`):
+
+- **H-2** — `POST /events` принимает `Idempotency-Key`: header =
+  материал ключа (`sha256(wh:key:bucket)`, то же окно). Маркер
+  `"<eventId>|<bodyHash>"` в Redis; same key+body → dup, same key +
+  иное тело → `409 idempotency_key_reused` на обоих путях
+  (Redis-hit + 23505-catch, тело сравнивается семантически —
+  `JsonNode.DeepEquals`: jsonb нормализует пробелы, строковое
+  сравнение ловилось живьём). >256 → 400. Тесты + 4 проверки в smoke.
+- **H-3** — `ClaimVersion` = EF concurrency token; bump на ingest
+  claim / replay / sweeper claim / stale reclaim (owner-rollback'и —
+  без). Стейл-воркер → `DbUpdateConcurrencyException` → полный
+  откат записи, info-лог. Хаос-#7 доказан: лиз 3с → 26 дропов, ноль
+  коррупции; лиз 12с → конвергенция `AttemptCount == attempts`.
+- **Найден край:** лиз < длительность отправки (~10с) → лайвлок —
+  задокументирован в guide/database/PLAN.
+
+**Доки:** `done-log` +2 таски · `tasks.md` карта/тела закрыты ·
+`PLAN.md` журнал решений (409 vs 422, кто владеет идемпотентностью,
+правило bump'ов, почему версия стережёт запись а не провод) ·
+`guide.md` EN+RU — В7 закрыт + лайвлок-край + H-2 контракт ·
+`database.md` — ClaimVersion как реальный guard + форматы ключей ·
+`architecture.md` — открытые вопросы закрыты · `ru/next.md` — В7
+закрыт · `classes.mmd`/`classes.drawio` — контракт стора синкнут.
+
+---
+
 ## 2026-11-08 — хвост сверки: drawio, RU-зеркала, known edges [docs]
 
 - `classes.drawio` — IDeduplicationStore синкнут с H-1 контрактом.
