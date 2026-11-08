@@ -36,6 +36,13 @@ attempts-панель, DLQ-кнопки, live-фид, чип соединени�
   фактами аудита: payload = строка с JSON, auth отсутствует, lenient
   `?status=`, connect-timeout первого ingest'а после смерти Redis;
   CHANGELOG — секция аудита с результатами живой матрицы.
+- `d256b8b` — **[D]** тесты на непокрытые границы: dedup-store
+  (8 шт — fail-open, легаси-значения, NX+TTL), StatsCache (5 шт —
+  агрегация, TTL по FakeTimeProvider, параллельные вызовы),
+  EngineMetrics (2 шт — Interlocked без потерь). Moq + EF InMemory
+  в тест-проект. 40 → **56** зелёных. Endpoints/workers осознанно
+  не юнитятся (ExecuteUpdateAsync — relational-only, покрыто
+  живой матрицей).
 - `ceb437b` — **[D]** рефактор дашборда в нормальную структуру React:
   App.tsx-простыня (228 строк) разбита на `components/` (8 файлов) +
   хуки `useDashboardData` (поллинг теперь `Promise.all` параллельно)
