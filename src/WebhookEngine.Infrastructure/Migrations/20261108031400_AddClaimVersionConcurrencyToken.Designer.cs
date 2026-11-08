@@ -12,7 +12,7 @@ using WebhookEngine.Infrastructure.Persistence;
 namespace WebhookEngine.Infrastructure.Migrations
 {
     [DbContext(typeof(WebhookEngineDbContext))]
-    [Migration("20261108031124_AddClaimVersionConcurrencyToken")]
+    [Migration("20261108031400_AddClaimVersionConcurrencyToken")]
     partial class AddClaimVersionConcurrencyToken
     {
         /// <inheritdoc />
