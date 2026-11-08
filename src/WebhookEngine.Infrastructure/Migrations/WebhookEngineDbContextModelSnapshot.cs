@@ -98,6 +98,7 @@ namespace WebhookEngine.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.Property<int>("ClaimVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -131,6 +132,8 @@ namespace WebhookEngine.Infrastructure.Migrations
 
                     b.HasIndex("IdempotencyKey")
                         .IsUnique();
+
+                    b.HasIndex("UpdatedAt");
 
                     b.HasIndex("WebhookId");
 

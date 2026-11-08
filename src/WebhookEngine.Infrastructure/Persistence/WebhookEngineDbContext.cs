@@ -26,6 +26,10 @@ public sealed class WebhookEngineDbContext(DbContextOptions<WebhookEngineDbConte
             // GET /events orders by UpdatedAt DESC every dashboard poll —
             // without this index it's a seq scan + sort per request.
             e.HasIndex(n => n.UpdatedAt);
+            // H-3: lease-version guard — every claim/reclaim bumps the
+            // version; a stale worker's write then hits 0 rows instead of
+            // silently last-write-winning AttemptCount/Status.
+            e.Property(n => n.ClaimVersion).IsConcurrencyToken();
             e.Property(n => n.Payload).HasColumnType("jsonb");
             e.Property(n => n.IdempotencyKey).HasMaxLength(64);
             e.HasOne(n => n.Webhook).WithMany(w => w.Events).HasForeignKey(n => n.WebhookId);

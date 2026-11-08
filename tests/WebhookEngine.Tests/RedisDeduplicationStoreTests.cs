@@ -6,9 +6,10 @@ using WebhookEngine.Infrastructure.Redis;
 namespace WebhookEngine.Tests;
 
 // Dedup cache semantics: Redis is an accelerator — a miss or a dead
-// Redis answers Guid.Empty ("don't know") and lets the PG unique
-// index stay the hard boundary. The stored value is the original
-// event id so a hit returns it directly.
+// Redis answers null ("don't know") and lets the PG unique index stay
+// the hard boundary. Since H-2 the value is an opaque marker
+// "<eventId>|<bodyHash>" — the store passes it through verbatim;
+// parsing lives in the endpoint.
 public class RedisDeduplicationStoreTests
 {
     private static (RedisDeduplicationStore store, Mock<IDatabase> db) Sut()
@@ -22,14 +23,14 @@ public class RedisDeduplicationStoreTests
     }
 
     [Fact]
-    public async Task Get_ReturnsStoredEventId()
+    public async Task Get_ReturnsRawMarker()
     {
         var (store, db) = Sut();
-        var id = Guid.NewGuid();
+        var marker = $"{Guid.NewGuid()}|abc123";
         db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
-          .ReturnsAsync((RedisValue)id.ToString());
+          .ReturnsAsync((RedisValue)marker);
 
-        Assert.Equal(id, await store.GetEventIdAsync("k"));
+        Assert.Equal(marker, await store.GetMarkerAsync("k"));
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public class RedisDeduplicationStoreTests
           .Callback<RedisKey, CommandFlags>((k, _) => seen = k)
           .ReturnsAsync(RedisValue.Null);
 
-        await store.GetEventIdAsync("abc");
+        await store.GetMarkerAsync("abc");
         Assert.Equal("dedup:abc", (string?)seen);
     }
 
@@ -52,20 +53,33 @@ public class RedisDeduplicationStoreTests
         db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
           .ReturnsAsync(RedisValue.Null);
 
-        Assert.Equal(Guid.Empty, await store.GetEventIdAsync("k"));
+        Assert.Null(await store.GetMarkerAsync("k"));
     }
 
     [Theory]
-    [InlineData("1")]                    // legacy pre-H-1 marker value
+    [InlineData("1")]                    // legacy pre-H-2 marker value
     [InlineData("not-a-guid")]           // garbage
-    [InlineData("")]                     // empty
-    public async Task Get_NonGuidValue_IsMiss(string value)
+    public async Task Get_StoredValue_PassesThroughVerbatim(string value)
     {
+        // The store is dumb since H-2: any stored value goes back to the
+        // caller, which decides how to parse it.
         var (store, db) = Sut();
         db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
           .ReturnsAsync((RedisValue)value);
 
-        Assert.Equal(Guid.Empty, await store.GetEventIdAsync("k"));
+        Assert.Equal(value, await store.GetMarkerAsync("k"));
+    }
+
+    [Fact]
+    public async Task Get_EmptyValue_IsMiss()
+    {
+        // StackExchange.Redis normalizes "" to IsNull — an empty marker
+        // can't parse to an eventId anyway, so "miss" is the right answer.
+        var (store, db) = Sut();
+        db.Setup(d => d.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+          .ReturnsAsync((RedisValue)"");
+
+        Assert.Null(await store.GetMarkerAsync("k"));
     }
 
     [Fact]
@@ -76,24 +90,24 @@ public class RedisDeduplicationStoreTests
           .ThrowsAsync(new RedisException("connection refused"));
 
         // Must not throw — ingest falls back to the PG unique index.
-        Assert.Equal(Guid.Empty, await store.GetEventIdAsync("k"));
+        Assert.Null(await store.GetMarkerAsync("k"));
     }
 
     [Fact]
     public async Task Mark_SetsKeyWithTtl_AndNotExists()
     {
         var (store, db) = Sut();
-        var id = Guid.NewGuid();
+        var marker = $"{Guid.NewGuid()}|deadbeef";
         var window = TimeSpan.FromHours(24);
         db.Setup(d => d.StringSetAsync(
                 It.IsAny<RedisKey>(), It.IsAny<RedisValue>(),
                 It.IsAny<TimeSpan?>(), It.IsAny<When>()))
           .ReturnsAsync(true);
 
-        await store.MarkAsync("k", id, window);
+        await store.MarkAsync("k", marker, window);
 
         db.Verify(d => d.StringSetAsync(
-            (RedisKey)"dedup:k", (RedisValue)id.ToString(),
+            (RedisKey)"dedup:k", (RedisValue)marker,
             window, When.NotExists), Times.Once);
     }
 
@@ -107,6 +121,6 @@ public class RedisDeduplicationStoreTests
           .ThrowsAsync(new RedisException("connection refused"));
 
         // Cache warm is best-effort — the row in PG is already durable.
-        await store.MarkAsync("k", Guid.NewGuid(), TimeSpan.FromHours(1));
+        await store.MarkAsync("k", "id|hash", TimeSpan.FromHours(1));
     }
 }

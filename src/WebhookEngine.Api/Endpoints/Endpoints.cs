@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using WebhookEngine.Core.Abstractions;
@@ -72,6 +74,7 @@ public static class Endpoints
         IConfiguration config,
         WebhookEngine.Core.Metrics.EngineMetrics metrics,
         TimeProvider time,
+        [FromHeader(Name = "Idempotency-Key")] string? idemKey,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.Payload))
@@ -97,14 +100,34 @@ public static class Endpoints
         windowHours = Math.Min(windowHours, 8760);
         var windowSecs = Math.Max(1L, (long)(windowHours * 3600));
         var bucket = time.GetUtcNow().ToUnixTimeSeconds() / windowSecs;
-        var redisKey = ComputeKey(req.WebhookId, req.Payload);
-        var key = ComputeKey(req.WebhookId, req.Payload, bucket);
+        // H-2: a client Idempotency-Key replaces the payload as key
+        // material — the body leaves the key, so same-key/different-body
+        // is a 409 conflict, not a silent duplicate. Whitespace counts
+        // as absent → content path.
+        if (idemKey is { Length: > 256 })
+            return Results.BadRequest(new { error = "Idempotency-Key too long (max 256)" });
+        var headerPath = !string.IsNullOrWhiteSpace(idemKey);
+        var material = headerPath ? idemKey! : req.Payload;
+        var bodyHash = ComputeKey(req.WebhookId, req.Payload);
+        var redisKey = ComputeKey(req.WebhookId, material);
+        var key = ComputeKey(req.WebhookId, material, bucket);
 
-        var seenId = await dedup.GetEventIdAsync(redisKey, ct);
-        if (seenId != Guid.Empty)
+        var marker = await dedup.GetMarkerAsync(redisKey, ct);
+        if (marker is not null)
         {
-            metrics.DedupHit();
-            return Results.Ok(new { eventId = seenId, status = "duplicate" });
+            // Marker format: "<eventId>|<bodyHash>". A legacy marker without
+            // '|' can't prove the body — trust it (pre-H-2 boundary, same
+            // material implies same content anyway).
+            var sep = marker.IndexOf('|');
+            var idPart = sep > 0 ? marker[..sep] : marker;
+            var hashPart = sep > 0 ? marker[(sep + 1)..] : null;
+            if (headerPath && hashPart is not null && hashPart != bodyHash)
+                return Results.Conflict(new { error = "idempotency_key_reused" });
+            if (Guid.TryParse(idPart, out var seenId))
+            {
+                metrics.DedupHit();
+                return Results.Ok(new { eventId = seenId, status = "duplicate" });
+            }
         }
 
         // Backpressure: reject only when the persistent queue is bloated (variant D with a ceiling).
@@ -136,9 +159,16 @@ public static class Endpoints
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: "23505" })
         {
-            metrics.DedupHit();
             var seen = await db.Events.AsNoTracking()
                 .FirstAsync(e => e.IdempotencyKey == key, ct);
+            // Header path: key equality says nothing about the body —
+            // same key + different payload is a conflict, not a dup.
+            // Compare semantically: jsonb normalizes whitespace/key order
+            // on write, a raw string compare would 409 an identical body.
+            if (headerPath && !JsonNode.DeepEquals(
+                    JsonNode.Parse(req.Payload), JsonNode.Parse(seen.Payload)))
+                return Results.Conflict(new { error = "idempotency_key_reused" });
+            metrics.DedupHit();
             return Duplicate(seen);
         }
 
@@ -149,7 +179,8 @@ public static class Endpoints
             .Where(e => e.Id == ev.Id && e.Status == EventStatus.Pending)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.Status, EventStatus.InFlight)
-                .SetProperty(e => e.UpdatedAt, now), ct);
+                .SetProperty(e => e.UpdatedAt, now)
+                .SetProperty(e => e.ClaimVersion, e => e.ClaimVersion + 1), ct);
 
         if (claimed == 1 && !queue.TryEnqueue(ev))
         {
@@ -167,7 +198,10 @@ public static class Endpoints
         }
 
         var window = TimeSpan.FromHours(windowHours);
-        await dedup.MarkAsync(redisKey, ev.Id, window, ct);
+        // Uniform marker "<id>|<bodyHash>" on both paths — H-2 needs the
+        // hash to detect same-key/different-body; on the content path it
+        // equals the key material, stored anyway for one format.
+        await dedup.MarkAsync(redisKey, $"{ev.Id}|{bodyHash}", window, ct);
 
         metrics.Accepted();
         return Results.Accepted(value: new { eventId = ev.Id, status = "accepted" });
@@ -212,6 +246,7 @@ public static class Endpoints
         // row would sit InFlight until lease expiry (5 min delay). Now:
         // claim InFlight → enqueue → didn't fit → roll back to Pending.
         ev.Status = EventStatus.InFlight;
+        ev.ClaimVersion++; // lease transfer — H-3: stale writes die on the token
         await db.SaveChangesAsync(ct);
         if (!queue.TryEnqueue(ev))
         {

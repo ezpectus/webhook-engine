@@ -20,9 +20,11 @@ public sealed class SweeperService(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var interval = TimeSpan.FromSeconds(config.GetValue("Sweeper:IntervalSeconds", 10));
+        // Fractional reads (double) — a sub-minute lease/interval is how
+        // chaos #7 is reproduced in seconds instead of waiting 5 min.
+        var interval = TimeSpan.FromSeconds(config.GetValue("Sweeper:IntervalSeconds", 10.0));
         var batch = config.GetValue("Sweeper:BatchSize", 500);
-        var leaseTimeout = TimeSpan.FromMinutes(config.GetValue("Sweeper:InFlightTimeoutMinutes", 5));
+        var leaseTimeout = TimeSpan.FromMinutes(config.GetValue("Sweeper:InFlightTimeoutMinutes", 5.0));
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -51,7 +53,8 @@ public sealed class SweeperService(
             .Where(e => e.Status == EventStatus.InFlight && e.UpdatedAt < staleBefore)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.Status, EventStatus.Pending)
-                .SetProperty(e => e.UpdatedAt, now), ct);
+                .SetProperty(e => e.UpdatedAt, now)
+                .SetProperty(e => e.ClaimVersion, e => e.ClaimVersion + 1), ct);
         if (stale > 0)
         {
             metrics.StaleReclaim(stale);
@@ -86,7 +89,8 @@ public sealed class SweeperService(
                         (x.Status == EventStatus.Pending || x.Status == EventStatus.RetryScheduled))
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Status, EventStatus.InFlight)
-                .SetProperty(x => x.UpdatedAt, now), ct);
+                .SetProperty(x => x.UpdatedAt, now)
+                .SetProperty(x => x.ClaimVersion, x => x.ClaimVersion + 1), ct);
         if (claimed == 0)
             return true; // someone else already claimed it — not an error
 

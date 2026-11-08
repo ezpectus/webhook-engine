@@ -7,9 +7,13 @@ namespace WebhookEngine.Core.Abstractions;
 /// </summary>
 public interface IDeduplicationStore
 {
-    /// <summary>Returns the event id stored for this key, or Guid.Empty on a miss.</summary>
-    Task<Guid> GetEventIdAsync(string key, CancellationToken ct = default);
+    /// <summary>
+    /// Returns the raw marker stored for this key, or null on a miss.
+    /// Marker format is "<eventId>|<bodyHash>" (H-2) — the store stays
+    /// dumb; callers parse.
+    /// </summary>
+    Task<string?> GetMarkerAsync(string key, CancellationToken ct = default);
 
-    /// <summary>Marks the key as seen for the dedup window; stored value is the eventId (after a successful PG insert).</summary>
-    Task MarkAsync(string key, Guid eventId, TimeSpan window, CancellationToken ct = default);
+    /// <summary>Marks the key as seen for the dedup window; the value is the pre-formatted marker.</summary>
+    Task MarkAsync(string key, string value, TimeSpan window, CancellationToken ct = default);
 }

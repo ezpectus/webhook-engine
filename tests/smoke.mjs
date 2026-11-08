@@ -30,6 +30,12 @@ const post = async (path, body) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+const postH = async (path, body, headers) =>
+  fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  })
 
 // --- health ---------------------------------------------------------------
 const health = await (await get('/health')).json()
@@ -63,6 +69,21 @@ ok('ingest: accepted with eventId', typeof e1.eventId === 'string' && e1.status 
 const e2 = await (await post('/events', { webhookId: wh.webhookId, payload })).json()
 ok('dedup: same payload -> same eventId', e2.eventId === e1.eventId && e2.status === 'duplicate',
   e2.eventStatus ? `via PG (${e2.eventStatus})` : 'via Redis')
+
+// --- H-2: client Idempotency-Key --------------------------------------------
+const ikey = `smoke-${tag}`
+const hk1 = await (await postH('/events',
+  { webhookId: wh.webhookId, payload }, { 'Idempotency-Key': ikey })).json()
+ok('idem: header key -> separate event',
+  typeof hk1.eventId === 'string' && hk1.eventId !== e1.eventId)
+const hk2 = await (await postH('/events',
+  { webhookId: wh.webhookId, payload }, { 'Idempotency-Key': ikey })).json()
+ok('idem: same key+body -> original id', hk2.eventId === hk1.eventId && hk2.status === 'duplicate')
+ok('idem: same key + different body -> 409', (await postH('/events',
+  { webhookId: wh.webhookId, payload: JSON.stringify({ other: tag }) },
+  { 'Idempotency-Key': ikey })).status === 409)
+ok('idem: >256-char key -> 400', (await postH('/events',
+  { webhookId: wh.webhookId, payload }, { 'Idempotency-Key': 'x'.repeat(257) })).status === 400)
 
 // --- event detail ----------------------------------------------------------
 await new Promise(r => setTimeout(r, 1500))

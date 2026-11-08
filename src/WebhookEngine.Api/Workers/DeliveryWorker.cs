@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 using WebhookEngine.Core.Abstractions;
 using WebhookEngine.Core.Models;
 using WebhookEngine.Infrastructure.Delivery;
@@ -40,6 +41,14 @@ public sealed class DeliveryWorker(
             try
             {
                 await ProcessAsync(ev, db, sender, feed, limiter, metrics, backoff, scheduler, time, stoppingToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // H-3: the lease died mid-flight (reclaim bumped the version).
+                // The whole write rolls back — no half-written result, no
+                // feed publish of a status that never persisted. Expected
+                // mechanism under lease loss, not an error.
+                logger.LogInformation("Dropped stale write for {EventId} — lease lost", ev.Id);
             }
             catch (Exception ex)
             {

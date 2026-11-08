@@ -14,7 +14,7 @@
           <mxGeometry x="60" y="80" width="640" height="120" as="geometry"/>
         </mxCell>
 
-        <mxCell id="contracts" value="&lt;b&gt;Abstractions (контракты границ)&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;IDeduplicationStore — GetEventIdAsync(key) / MarkAsync(key, eventId, window)&lt;br&gt;IEventQueue — TryEnqueue / ReadAllAsync&lt;br&gt;IWebhookRateLimiter — AcquireDelayAsync(id, rps) → TimeSpan&lt;br&gt;IRetryScheduler — ScheduleAsync(id, dueAt) / ReadDueAsync(now)&lt;br&gt;IStatusFeed — PublishAsync(id, status)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;" vertex="1" parent="1">
+        <mxCell id="contracts" value="&lt;b&gt;Abstractions (контракты границ)&lt;/b&gt;&lt;br&gt;——————————&lt;br&gt;IDeduplicationStore — GetMarkerAsync(key) string? / MarkAsync(key, marker, window)&lt;br&gt;IEventQueue — TryEnqueue / ReadAllAsync&lt;br&gt;IWebhookRateLimiter — AcquireDelayAsync(id, rps) → TimeSpan&lt;br&gt;IRetryScheduler — ScheduleAsync(id, dueAt) / ReadDueAsync(now)&lt;br&gt;IStatusFeed — PublishAsync(id, status)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;fontSize=11;spacingLeft=6;spacingTop=4;" vertex="1" parent="1">
           <mxGeometry x="60" y="215" width="310" height="110" as="geometry"/>
         </mxCell>
 

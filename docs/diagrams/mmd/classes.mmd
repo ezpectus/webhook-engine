@@ -53,8 +53,8 @@ classDiagram
     namespace Core.Abstractions {
         class IDeduplicationStore {
             <<interface>>
-            +GetEventIdAsync(key) Guid "Guid.Empty on miss"
-            +MarkAsync(key, eventId, window)
+            +GetMarkerAsync(key) string? "null on miss"
+            +MarkAsync(key, marker, window) "marker = id|bodyHash"
         }
         class IEventQueue {
             <<interface>>
