@@ -23,6 +23,9 @@ public sealed class WebhookEngineDbContext(DbContextOptions<WebhookEngineDbConte
         {
             e.HasIndex(n => n.IdempotencyKey).IsUnique();
             e.HasIndex(n => new { n.Status, n.NextAttemptAt });
+            // GET /events orders by UpdatedAt DESC every dashboard poll —
+            // without this index it's a seq scan + sort per request.
+            e.HasIndex(n => n.UpdatedAt);
             e.Property(n => n.Payload).HasColumnType("jsonb");
             e.Property(n => n.IdempotencyKey).HasMaxLength(64);
             e.HasOne(n => n.Webhook).WithMany(w => w.Events).HasForeignKey(n => n.WebhookId);
