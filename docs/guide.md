@@ -129,6 +129,16 @@ within seconds. The prod direction is in the last column.
 - In-memory limiter and heap are single-instance (scale wave: Redis +
   leader election)
 - `AttemptCount` is not protected by a concurrency token — see Q7
+- `payload` is a **string containing JSON**, not a nested object —
+  `{"payload":{"a":1}}` is rejected by model binding before the
+  handler (400). Send `{"payload":"{\"a\":1}"}`.
+- No authentication on any endpoint — local MVP scope; anything that
+  can reach the port can ingest and replay.
+- An invalid `?status=` filter on `GET /events` is ignored (returns
+  all), not a 400 — lenient on purpose for the dashboard.
+- The first ingest after Redis dies waits out the client connect
+  timeout (~10–20s) before failing open to the PG path; subsequent
+  calls fail fast — StackExchange.Redis reconnect backoff, by design.
 
 ## Run it
 
