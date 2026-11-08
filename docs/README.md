@@ -3,6 +3,7 @@
 | File | What it is | When to read |
 | --- | --- | --- |
 | `architecture.md` | architectural style (D15), components, DB schema, guarantees, roadmap | to understand "how it's built" |
+| `database.md` | the DB model explained: per-table/index rationale + measured load behavior (pool boundary, channel-full path) | "how does the schema handle load" |
 | `guide.md` | onboarding to the **real code**: event path, statuses, boundary map, config | first file after README |
 | `tasks.md` | live backlog — only `todo`/`review` | "what's next" |
 | `done-log.md` | archive of closed tasks with files and commits | "what's already done" |

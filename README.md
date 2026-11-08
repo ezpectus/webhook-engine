@@ -61,6 +61,8 @@ flowchart LR
 
 Full diagram set (dedup flow, request sequence, status state
 machine, ER schema): [docs/diagrams/system.md](docs/diagrams/system.md).
+The DB model explained — per-table/index rationale and measured
+load behavior: [docs/database.md](docs/database.md).
 Reasoning behind every ordering choice: [PLAN.md](PLAN.md).
 
 ## Dashboard

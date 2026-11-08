@@ -1,45 +1,46 @@
 erDiagram
-    WebhookEndpoints ||--o{ NotificationEvents : "получает"
-    NotificationEvents ||--o{ DeliveryAttempts : "история"
-    NotificationEvents ||--o| DeadLetters : "терминал"
+    Webhooks ||--o{ Events : "receives"
+    Events ||--o{ DeliveryAttempts : "attempt history"
+    Events ||--o{ DeadLetters : "terminal + audit"
 
-    WebhookEndpoints {
+    Webhooks {
         uuid Id PK
-        string Url "IDX"
-        string Secret "HMAC-ключ подписи"
+        varchar_2048 Url "IDX"
+        text Secret "HMAC signing key, nullable"
         int RateLimitPerSecond "token bucket"
         bool IsActive
         timestamptz CreatedAt
     }
 
-    NotificationEvents {
+    Events {
         uuid Id PK
         uuid WebhookId FK
-        string IdempotencyKey "UNIQUE — граница dedup"
+        varchar_64 IdempotencyKey "UNIQUE — hard dedup boundary"
         jsonb Payload
-        int Status "Pending·InFlight·RetryScheduled·Delivered·DeadLettered"
+        int Status "0 Pending·1 InFlight·2 RetryScheduled·3 Delivered·4 DeadLettered"
         int AttemptCount
-        timestamptz NextAttemptAt "durable-расписание; IDX(Status,NextAttemptAt)"
-        timestamptz DeliveredAt
+        int ClaimVersion "lease-versioning (H-3 guard)"
+        timestamptz NextAttemptAt "durable retry schedule; IDX(Status,NextAttemptAt)"
+        timestamptz DeliveredAt "nullable"
         timestamptz CreatedAt
-        timestamptz UpdatedAt "lease-метка для stale-reclaim"
+        timestamptz UpdatedAt "nullable — lease mark for stale-reclaim"
     }
 
     DeliveryAttempts {
-        uuid Id PK
+        bigint Id PK "identity"
         uuid EventId FK "IDX(EventId,AttemptNumber)"
-        int AttemptNumber
+        int AttemptNumber "resets to 1 on replay — two cycles interleave by AttemptedAt"
         timestamptz AttemptedAt
-        int ResponseStatusCode "null при timeout/conn error"
-        string Error
+        int ResponseStatusCode "null on timeout/conn error"
+        text Error
         bool Succeeded
         int DurationMs
     }
 
     DeadLetters {
-        uuid Id PK
-        uuid EventId FK
-        string Reason "почему здесь — через неделю должно быть ясно"
+        bigint Id PK "identity"
+        uuid EventId FK "IDX"
+        text Reason "why it's here — must be obvious a week later"
         timestamptz DeadLetteredAt "IDX"
-        timestamptz ReplayedAt "null = живая запись DLQ"
+        timestamptz ReplayedAt "null = live DLQ entry; set = audit row"
     }

@@ -23,7 +23,7 @@ CREATE TABLE "Events" (
     "NextAttemptAt" timestamptz,        -- durable-расписание ретраев
     "DeliveredAt" timestamptz,
     "CreatedAt" timestamptz NOT NULL,
-    "UpdatedAt" timestamptz NOT NULL    -- lease-метка для stale-reclaim
+    "UpdatedAt" timestamptz             -- lease-метка для stale-reclaim (nullable)
 );
 -- H-1: ключ = sha256(wh:payload:bucket) — unique держит окно, не вечность
 CREATE UNIQUE INDEX "IX_Events_IdempotencyKey" ON "Events" ("IdempotencyKey");
@@ -32,9 +32,9 @@ CREATE INDEX "IX_Events_WebhookId" ON "Events" ("WebhookId");
 CREATE INDEX "IX_Events_Status_NextAttemptAt" ON "Events" ("Status", "NextAttemptAt");
 
 CREATE TABLE "DeliveryAttempts" (
-    "Id" uuid PRIMARY KEY,
+    "Id" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "EventId" uuid NOT NULL REFERENCES "Events" ("Id") ON DELETE CASCADE,
-    "AttemptNumber" integer NOT NULL,
+    "AttemptNumber" integer NOT NULL,   -- перезапускается с 1 после replay
     "AttemptedAt" timestamptz NOT NULL,
     "ResponseStatusCode" integer,       -- null при timeout/conn error
     "Error" text,
@@ -45,7 +45,7 @@ CREATE INDEX "IX_DeliveryAttempts_EventId_AttemptNumber"
     ON "DeliveryAttempts" ("EventId", "AttemptNumber");
 
 CREATE TABLE "DeadLetters" (
-    "Id" uuid PRIMARY KEY,
+    "Id" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     "EventId" uuid NOT NULL REFERENCES "Events" ("Id") ON DELETE CASCADE,
     "Reason" text NOT NULL,
     "DeadLetteredAt" timestamptz NOT NULL,

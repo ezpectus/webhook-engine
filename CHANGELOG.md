@@ -9,6 +9,26 @@
 
 ---
 
+## 2026-11-08 — БД-доки + нагрузочный прогон [docs]
+
+LoadGen против живого стека: **300 rps × 15с — 0 ошибок**
+(3616 accept + 884 dedup, ratio совпал с конфигом). Бёрст
+2500 rps × 12с: **0 серверных исключений** — ~13k «ошибок» были
+клиентским исчерпанием сокетов LoadGen'а, API обработал всё дошедшее.
+Найдена реальная граница: Npgsql `MaxPoolSize=100` = `max_connections`
+PG → под бёрстом пул занял весь сервер (`FATAL: too many clients`
+для psql, `/health` → degraded), коннекты висят до IdleLifetime.
+
+- `docs/database.md` — новый док: модель БД по таблицам, зачем
+  каждый индекс, измеренное поведение под нагрузкой (пул-граница,
+  channel-full→sweeper, порядок отказов).
+- `db.mmd` — синкнут с моделью: имена таблиц, `ClaimVersion`,
+  bigint-PK attempts/DLQ, nullable-поля. `schema.sql` — bigint
+  identity PK, `UpdatedAt` nullable.
+- docs/README + README — ссылки на database.md.
+
+---
+
 ## 2026-11-08 — доки: compose-сеть в known edges + гигиена docker [docs]
 
 - `docs/guide.md` + `docs/ru/guide.md`: known edge — `localhost`
