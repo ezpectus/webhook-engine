@@ -66,7 +66,8 @@ In .NET it usually arrives with MediatR:
 - The domain is CRUD-like: `NotificationEvent` is read and written in
   the same shape. Command/Query handlers would double the code for
   zero benefit.
-- `/stats` reads straight from the same table — honest and cheap.
+- `/stats` reads the same table through a 3s StatsCache snapshot —
+  honest and cheap.
 - CQRS is about **read/write asymmetry**, not "good architecture".
   No asymmetry → no CQRS.
 

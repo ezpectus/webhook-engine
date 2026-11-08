@@ -1,23 +1,33 @@
 # Guide — как устроена система
 
+> **EN-версия авторитетна** (`../guide.md`). Этот файл обновляется
+> реже — при расхождении верь английскому.
+
 Для себя и для тех, кто подключается. Описывает код **как он есть**,
-а не как задумано. Последнее обновление 2026-10-25: полный цикл —
-приём, dedup, очередь, параллельные воркеры, rate limiter,
+а не как задумано. Последнее обновление 2026-11-08: полный цикл —
+приём, dedup (H-1: два ключа), очередь, параллельные воркеры, rate limiter,
 backoff+jitter+heap, DLQ, HMAC, метрики.
 
 ## Путь события end-to-end
 
 ```
 POST /events
-  → валидация (payload, webhook существует и активен)
-  → dedup-ключ = sha256(webhookId + ":" + payload)
-  → Redis IsKnown (быстрый фильтр; лёг → пропускаем, fail-open)
+  → валидация (JSON payload, webhook существует и активен;
+    регистрация принимает только http(s) URL)
+  → redisKey = sha256(webhookId + ":" + payload)           — контентный ключ
+    pgKey    = sha256(webhookId + ":" + payload + ":" + bucket)
+    bucket   = now / Dedup:WindowHours (TimeProvider)
+  → Redis GET dedup:<redisKey>
+       ├── hit → возвращаем сохранённый eventId → 200 "duplicate" (ноль чтений PG)
+       └── miss / Redis лёг → проходим дальше (fail-open)
   → backpressure: недоставленных >= PendingThreshold → 503
-  → INSERT в PG (unique на IdempotencyKey; 23505 → ответ "duplicate")
+  → INSERT в PG (unique на IdempotencyKey = pgKey;
+    23505 → ответ "duplicate" — жёсткая граница)
   → TryEnqueue в bounded channel
-       ├── попал    → Status = InFlight
+       ├── попал    → Status = InFlight (атомарный claim)
        └── не попал → остаётся Pending (доберёт sweeper)
-  → MarkAsync в Redis (кеш «видели», TTL 24ч)
+  → Redis SET dedup:<redisKey> = eventId, NX EX windowHours
+    (скользящий TTL от первого визита; тот же контент в следующем окне = новое событие)
   → 202 Accepted { eventId }
 
 DeliveryWorker (BackgroundService, ×4 параллельных читателя)
@@ -32,7 +42,7 @@ DeliveryWorker (BackgroundService, ×4 параллельных читателя
   → non-retry  → DeadLettered + DeadLetterItem(reason)
   → воркер упал посреди → событие висит InFlight → sweeper вернёт
 
-SweeperService (каждые 10с, бережно)
+SweeperService (каждые 2с локально, бережно)
   → InFlight с UpdatedAt старше 5 мин → Pending (lease reclaim)
   → fast path: ReadDueAsync из heap → claim → enqueue
   → PG-скан (истина): Pending/RetryScheduled с NextAttemptAt <= now
@@ -68,7 +78,7 @@ SweeperService (каждые 10с, бережно)
 | `Api/Hubs/` | SignalR-фид статусов (`/hubs/status`, метод `"status"`) | платформа |
 | `dashboard/` | React-дашборд: статусы, метрики, события<br>+ attempts, DLQ+replay, live-фид | платформа |
 | `tools/LoadGen/` | генератор нагрузки (rps/burst/dup %) | платформа |
-| `tools/MockReceiver/` | приёмник с режимами хаоса (500/429/slow/flap) | платформа |
+| `tools/MockReceiver/` | приёмник с режимами хаоса (ok/500/429/slow/flap/drop) | платформа |
 | `Infrastructure/Redis/RedisDeduplicationStore.cs` | dedup-кеш, fail-open (abortConnect=false) | юзер ревьюит |
 | `Infrastructure/Queues/EventQueue.cs` | bounded channel 10k | ревью |
 | `Api/Workers/DeliveryWorker.cs` | ×4 читателя; send, попытки, backoff→DLQ | ревью |

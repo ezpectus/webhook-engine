@@ -82,7 +82,7 @@ SweeperService (every 2s locally, gentle)
 | `Api/Hubs/` | SignalR status feed (`/hubs/status`, method `"status"`) | platform |
 | `dashboard/` | React dashboard: statuses, metrics, events<br>+ attempts, DLQ+replay, live feed | platform |
 | `tools/LoadGen/` | load generator (rps/burst/dup %) | platform |
-| `tools/MockReceiver/` | receiver with chaos modes (500/429/slow/flap) | platform |
+| `tools/MockReceiver/` | receiver with chaos modes (ok/500/429/slow/flap/drop) | platform |
 | `Infrastructure/Redis/RedisDeduplicationStore.cs` | dedup cache, fail-open (abortConnect=false) | user reviews |
 | `Infrastructure/Persistence/StatsCache.cs` | 3s TTL snapshot for /stats + /metrics | platform |
 | `Infrastructure/Queues/EventQueue.cs` | bounded channel 10k | review |
