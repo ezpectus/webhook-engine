@@ -9,6 +9,18 @@
 
 ---
 
+## 2026-11-08 — доки: compose-сеть в known edges + гигиена docker [docs]
+
+- `docs/guide.md` + `docs/ru/guide.md`: known edge — `localhost`
+  внутри контейнера указывает на сам контейнер; приёмник в композе
+  адресуется `http://mockreceiver:5005/hook` (`RECEIVER=` в smoke).
+  RU-дрейф «В7 → open_questions» синкнут с EN (принято, фикс = H-3).
+- `AGENTS.md` (окружение): безопасная гигиена docker — builder/image/
+  container prune (~1.9 ГБ вернулось), запрет `volume prune` после
+  `compose down` (сносит `pgdata`), compose-DNS факт.
+
+---
+
 ## 2026-11-08 — финальный прогон: полный compose + smoke [D/docs]
 
 Полный `docker compose up --build` (postgres + redis + api +

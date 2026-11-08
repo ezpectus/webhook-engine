@@ -139,6 +139,10 @@ within seconds. The prod direction is in the last column.
 - The first ingest after Redis dies waits out the client connect
   timeout (~10–20s) before failing open to the PG path; subsequent
   calls fail fast — StackExchange.Redis reconnect backoff, by design.
+- Inside compose, `localhost` in a webhook URL resolves to the API
+  container itself — address the receiver by service name
+  (`http://mockreceiver:5005/hook`). `tests/smoke.mjs` takes
+  `RECEIVER=` for exactly this.
 
 ## Run it
 

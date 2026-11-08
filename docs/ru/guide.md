@@ -119,8 +119,8 @@ SweeperService (каждые 2с локально, бережно)
 - **В7 — параллельный дубль через медленный канал**: backlog > 5 мин →
   InFlight протухает → reclaim → второй enqueue → два воркера шлют
   одновременно. Дубль легален; `AttemptCount` теряет инкремент
-  (last-write-wins). Чинить lease-version или документировать — вопрос
-  в `open_questions.md`
+  (last-write-wins). Принято и задокументировано как граница; фикс —
+  ручной таск H-3 в `tasks.md` (lease-versioning)
 - In-memory лимитер и heap — одноинстансные (scale-волна: Redis +
   leader-election)
 - `AttemptCount` не защищён concurrency-токеном — см. В7
@@ -134,6 +134,10 @@ SweeperService (каждые 2с локально, бережно)
 - Первый ingest после смерти Redis ждёт connect-timeout (~10-20с)
   до fail-open на PG-путь; следующие запросы фейлятся быстро —
   reconnect-backoff StackExchange.Redis, осознанно.
+- Внутри compose `localhost` в URL вебхука указывает на сам
+  API-контейнер — приёмник зовётся по имени сервиса
+  (`http://mockreceiver:5005/hook`). `tests/smoke.mjs` принимает
+  `RECEIVER=` для этого случая.
 
 ## Запуск
 

@@ -145,6 +145,15 @@ webhook sending · React-дашборд · docker-compose · генератор 
   2.7 блокирует флагом `--allow-unsafe` — риск коррупции данных.
   Дистрибутив `docker-desktop-data` в современном Docker Desktop
   отсутствует — vhdx принадлежит `docker-desktop`.
+- Регулярная гигиена без потери данных: `docker builder prune`
+  (кэш после compose-сборки ~1.9 ГБ — вернул 2026-11-08),
+  `docker container prune`, `docker image prune`. Осторожно:
+  `docker volume prune` после `compose down` сотрёт `pgdata`
+  (том «unused» без контейнеров). Образы проекта (~750 МБ)
+  держим — следующий `compose up` мгновенный.
+- Compose-сеть: `localhost` внутри контейнера — сам контейнер.
+  Вебхук на приёмник = `http://mockreceiver:5005/hook`
+  (smoke принимает `RECEIVER=`).
 - Второй WSL-диск: `%LOCALAPPDATA%\wsl\*\ext4.vhdx` ~2.3 ГБ.
 - Репо сам лёгкий (~150 МБ): `node_modules`/`bin`/`obj`
   регенерируются — `npm ci`, `dotnet build`.
