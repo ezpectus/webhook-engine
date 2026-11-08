@@ -36,8 +36,12 @@ export interface EngineEvent {
   updatedAt: string
 }
 
+// Throw on non-2xx so an error body never parses into "valid" data.
+const j = <T>(r: Response): Promise<T> =>
+  r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))
+
 export const getStats = (): Promise<Stats> =>
-  fetch('/stats').then(r => r.json())
+  fetch('/stats').then(j<Stats>)
 
 export interface EventDetail extends EngineEvent {
   deliveredAt: string | null
@@ -53,16 +57,16 @@ export interface EventDetail extends EngineEvent {
 }
 
 export const getEvents = (): Promise<EngineEvent[]> =>
-  fetch('/events?take=30').then(r => r.json())
+  fetch('/events?take=30').then(j<EngineEvent[]>)
 
 export const getEvent = (id: string): Promise<EventDetail> =>
-  fetch(`/events/${id}`).then(r => r.json())
+  fetch(`/events/${id}`).then(j<EventDetail>)
 
 export const getMetrics = (): Promise<Metrics> =>
-  fetch('/metrics').then(r => r.json())
+  fetch('/metrics').then(j<Metrics>)
 
 export const getDeadLetters = (): Promise<DeadLetter[]> =>
-  fetch('/deadletters').then(r => r.json())
+  fetch('/deadletters').then(j<DeadLetter[]>)
 
 export const replay = (eventId: string): Promise<Response> =>
   fetch(`/deadletters/${eventId}/replay`, { method: 'POST' })

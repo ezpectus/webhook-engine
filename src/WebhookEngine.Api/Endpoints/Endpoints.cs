@@ -243,7 +243,7 @@ public static class Endpoints
                 e.Id, e.WebhookId, e.Status, e.AttemptCount,
                 e.NextAttemptAt, e.DeliveredAt, e.CreatedAt, e.UpdatedAt,
                 Attempts = e.Attempts
-                    .OrderBy(a => a.AttemptNumber)
+                    .OrderBy(a => a.AttemptedAt)
                     .Select(a => new
                     {
                         a.AttemptNumber, a.AttemptedAt, a.ResponseStatusCode,

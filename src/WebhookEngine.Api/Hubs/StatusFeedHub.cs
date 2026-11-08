@@ -2,5 +2,5 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace WebhookEngine.Api.Hubs;
 
-/// <summary>Хаб статусов доставки. Клиенты слушают метод "status".</summary>
+/// <summary>Delivery status hub. Clients listen on the "status" method.</summary>
 public sealed class StatusFeedHub : Hub;

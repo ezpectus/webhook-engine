@@ -4,12 +4,12 @@ using System.Text;
 namespace WebhookEngine.Core.Hashing;
 
 /// <summary>
-/// Consistent hash ring (TASK-008): узлы и ключи — точки на uint32-кольце.
-/// Добавление/удаление узла перераспределяет ~1/n ключей вместо всего.
+/// Consistent hash ring (TASK-008): nodes and keys are points on a
+/// uint32 ring. Adding/removing a node remaps ~1/n of keys, not all.
 /// </summary>
 public sealed class ConsistentHashRing
 {
-    private readonly SortedDictionary<uint, string> _points = new(); // точка → узел
+    private readonly SortedDictionary<uint, string> _points = new(); // point → node
     private readonly int _virtualNodes;
     private readonly object _gate = new();
 
@@ -34,7 +34,7 @@ public sealed class ConsistentHashRing
                 _points.Remove(p);
     }
 
-    /// <summary>Ближайший узел по часовой от точки ключа; null — кольцо пустое.</summary>
+    /// <summary>Nearest node clockwise from the key's point; null when the ring is empty.</summary>
     public string? GetNode(string key)
     {
         lock (_gate)
@@ -43,7 +43,7 @@ public sealed class ConsistentHashRing
             var h = Hash(key);
             foreach (var (point, node) in _points)
                 if (point >= h) return node;
-            return _points.Values.First(); // обход кольца
+            return _points.Values.First(); // wrap around the ring
         }
     }
 

@@ -60,7 +60,7 @@ export default function App() {
       setDlq(await getDeadLetters())
       setLastRefresh(new Date())
     } catch {
-      // API offline — покажем пустое
+      // API offline — show whatever is already on screen
     }
   }
 
@@ -84,8 +84,8 @@ export default function App() {
   }, [])
 
   const onReplay = async (eventId: string) => {
-    await replay(eventId)
-    refresh()
+    const r = await replay(eventId)
+    if (r.ok) refresh()
   }
 
   const shown = filter === '' ? events : events.filter(e => statusName(e.status) === filter)
@@ -168,7 +168,7 @@ export default function App() {
                   </thead>
                   <tbody>
                     {selected.attempts.map(a => (
-                      <tr key={a.attemptNumber}>
+                      <tr key={`${a.attemptNumber}-${a.attemptedAt}`}>
                         <td className="num">{a.attemptNumber}</td>
                         <td className="muted num">{time(a.attemptedAt)}</td>
                         <td><HttpCode code={a.responseStatusCode} /></td>

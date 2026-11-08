@@ -3,8 +3,8 @@ using WebhookEngine.Core.Abstractions;
 
 namespace WebhookEngine.Api.Hubs;
 
-/// <summary>Платформа: фан-аут статусов в SignalR. Ошибки бродкаста глушим —
-/// фид это наблюдаемость, а не граница доставки.</summary>
+/// <summary>Platform: status fan-out over SignalR. Broadcast errors are
+/// swallowed — the feed is observability, not a delivery boundary.</summary>
 public sealed class SignalRStatusFeed(IHubContext<StatusFeedHub> hub) : IStatusFeed
 {
     public async Task PublishAsync(Guid eventId, string status, CancellationToken ct = default)
@@ -15,7 +15,7 @@ public sealed class SignalRStatusFeed(IHubContext<StatusFeedHub> hub) : IStatusF
         }
         catch
         {
-            // фид упал — доставку не блокируем
+            // feed is down — delivery must not be blocked
         }
     }
 }

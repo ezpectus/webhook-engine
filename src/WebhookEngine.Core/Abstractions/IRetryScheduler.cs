@@ -1,13 +1,13 @@
 namespace WebhookEngine.Core.Abstractions;
 
 /// <summary>
-/// Планировщик отложенных ретраев. Реализация — зона юзера (TASK-005).
+/// Scheduler for deferred retries. Implementation is the user's zone (TASK-005).
 /// </summary>
 public interface IRetryScheduler
 {
-    /// <summary>Поставить событие в расписание на указанный момент.</summary>
+    /// <summary>Put an event on the schedule for the given moment.</summary>
     Task ScheduleAsync(Guid eventId, DateTimeOffset nextAttemptAt, CancellationToken ct = default);
 
-    /// <summary>Читать события, время которых пришло.</summary>
+    /// <summary>Read events whose time has come.</summary>
     IAsyncEnumerable<Guid> ReadDueAsync(DateTimeOffset now, CancellationToken ct = default);
 }

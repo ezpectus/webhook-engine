@@ -1,19 +1,19 @@
 namespace WebhookEngine.Core.Metrics;
 
 /// <summary>
-/// In-memory счётчики движка (TASK-009). Платформа: инкременты на
-/// границах, чтение через /metrics. Не точность Prometheus — сигналы.
+/// In-memory engine counters (TASK-009). Platform: increments at the
+/// boundaries, read via /metrics. Signals, not Prometheus accuracy.
 /// </summary>
 public sealed class EngineMetrics
 {
     public long EventsAccepted;
-    public long EventsRejected;      // 503 по потолку / 400 валидация
-    public long DedupHits;           // ответ "duplicate"
+    public long EventsRejected;      // 503 on backlog ceiling / 400 validation
+    public long DedupHits;           // answered "duplicate"
     public long SendsOk;
     public long SendsRetryable;
     public long SendsNonRetryable;
-    public long LimiterDelays;       // воркер ушёл на паузу по лимиту
-    public long StaleReclaims;       // sweeper вернул протухший InFlight
+    public long LimiterDelays;       // worker deferred by the rate limit
+    public long StaleReclaims;       // sweeper reclaimed an expired InFlight lease
 
     public void DedupHit() => Interlocked.Increment(ref DedupHits);
     public void Accepted() => Interlocked.Increment(ref EventsAccepted);
