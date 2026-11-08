@@ -9,6 +9,7 @@ import { EventsTable } from './components/EventsTable'
 import { AttemptsPanel } from './components/AttemptsPanel'
 import { DeadLetters } from './components/DeadLetters'
 import { LiveFeed } from './components/LiveFeed'
+import { Playground } from './components/Playground'
 import './App.css'
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
       <Header lastRefresh={lastRefresh} connected={connected} />
       <StatusCards stats={stats} />
       <MetricsBar metrics={metrics} />
+      <Playground onChanged={refresh} />
       <div className="cols">
         <section>
           <EventsTable events={events} filter={filter} onFilter={setFilter} onSelect={select} />

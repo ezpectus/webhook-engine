@@ -70,3 +70,30 @@ export const getDeadLetters = (): Promise<DeadLetter[]> =>
 
 export const replay = (eventId: string): Promise<Response> =>
   fetch(`/deadletters/${eventId}/replay`, { method: 'POST' })
+
+// --- Playground mutations -------------------------------------------------
+
+export interface Webhook {
+  id: string
+  url: string
+  rateLimitPerSecond: number
+  isActive: boolean
+  createdAt: string
+}
+
+export const getWebhooks = (): Promise<Webhook[]> =>
+  fetch('/webhooks').then(j<Webhook[]>)
+
+export const registerWebhook = (url: string, rateLimitPerSecond: number): Promise<Response> =>
+  fetch('/webhooks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, rateLimitPerSecond }),
+  })
+
+export const sendEvent = (webhookId: string, payload: string): Promise<Response> =>
+  fetch('/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ webhookId, payload }),
+  })

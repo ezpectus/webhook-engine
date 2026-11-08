@@ -169,6 +169,26 @@ button {
   cursor: pointer; letter-spacing: .02em;
 }
 button:hover { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: .4; cursor: default; }
+button:disabled:hover { border-color: var(--border); color: var(--text); }
+
+/* ---------- playground ---------- */
+
+.playground {
+  margin-bottom: 20px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--panel);
+}
+.playground .toolbar { margin-bottom: 10px; }
+.pg-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.pg-row label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; width: 64px; }
+.pg-base {
+  flex: 1; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px 8px; font-size: 12px; outline: none;
+}
+.pg-base:focus { border-color: var(--accent); }
+.pg-mode { font-family: var(--mono); font-size: 11px; }
+.pg-mode.sel { border-color: var(--accent); color: var(--accent); }
 
 /* ---------- live feed ---------- */
 
