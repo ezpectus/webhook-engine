@@ -104,14 +104,18 @@ events ───> │ Ingest   │─> │ Dedup      │─> │ Queue        �
 - Open boundary questions (where exactly a dup/loss can occur) —
   see `PLAN.md` (the proven boundary map lives there).
 
-## DB schema (stage 1, implemented)
+## DB schema (implemented — see `database.md` for the full model + cost)
 
-- `webhook_endpoints` — Url, Secret, RateLimitPerSecond, IsActive
-- `notification_events` — IdempotencyKey (unique), Payload (jsonb),
-  Status, AttemptCount, NextAttemptAt, DeliveredAt;
-  index `(Status, NextAttemptAt)` — due-retry scan
-- `delivery_attempts` — attempt history: response code, error, duration
-- `dead_letter_items` — Reason, DeadLetteredAt, ReplayedAt
+- `Webhooks` — Url, Secret, RateLimitPerSecond, IsActive
+- `Events` — IdempotencyKey (unique), Payload (jsonb), Status,
+  AttemptCount, ClaimVersion (H-3 guard), NextAttemptAt, DeliveredAt,
+  CreatedAt, UpdatedAt (lease);
+  indexes `(Status, NextAttemptAt)` — due-retry scan, `(UpdatedAt)` —
+  dashboard list ordering, unique `(IdempotencyKey)` — dedup boundary
+- `DeliveryAttempts` — bigint identity PK, attempt history: response
+  code, error, duration
+- `DeadLetters` — bigint identity PK, Reason, DeadLetteredAt,
+  ReplayedAt (null = live row; replay appends audit rows)
 
 **Double dup protection (H-1, rolling window):** the Redis marker
 `dedup:sha256(webhookId:payload)` → `eventId` is the fast filter —
@@ -153,8 +157,9 @@ flowchart TD
 
 1. **Skeleton** ✓: ASP.NET scaffold, Postgres schema, docker-compose
 2. **Ingest** ✓: intake + dedup (insert-first: PG index + Redis cache)
-3. **Queue** ✓: bounded channel + "PG = queue, 503 past the ceiling"
-   policy + sweeper
+3. **Queue** ✓: two-layer backpressure — full channel rolls back to
+   `Pending` (sweeper-paced, no drop); PG depth ≥
+   `Queue:PendingThreshold` → honest 503 reject
 4. **Delivery** ✓: workers + HttpClientFactory; rate limiter — TASK-004
 5. **Retries** ✓: min-heap + backoff/jitter — TASK-005
 6. **DLQ** ✓: semantics in worker; replay endpoint — TASK-006

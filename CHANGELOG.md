@@ -9,6 +9,23 @@
 
 ---
 
+## 2026-11-08 — похожие дыры: lint-скрипт + дрейф архитектуры [D/docs]
+
+- `dashboard/package.json`: `lint` через `.bin`-обёртку падал на
+  Windows — `&` в пути репо (`Notification & Webhook Engine`)
+  ломает cmd-парсер. Теперь `node node_modules/oxlint/bin/oxlint`
+  как у dev/build-скриптов; на CI идентично.
+- `docs/architecture.md`: DB-секция — реальные имена таблиц
+  (PascalCase), ClaimVersion, UpdatedAt, новый индекс; roadmap —
+  честная двухслойная модель backpressure (channel-full → rollback,
+  PG depth ≥ PendingThreshold → 503).
+- `docs/database.md` — cost-model дополнен слоем 503-check;
+  секция backpressure описывает оба слоя.
+- `docs/guides/concepts.md`, `h3_walkthrough.md` — snake_case
+  имена таблиц → реальные.
+
+---
+
 ## 2026-11-08 — алго-аудит + индекс UpdatedAt + диаграммы [D]
 
 Полный проход сложности: ingest O(log N) (B-tree insert+claim),

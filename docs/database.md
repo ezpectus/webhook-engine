@@ -106,7 +106,7 @@ N = events row count · V = ring points (150/node) · B = sweeper batch (500)
 
 | Path | Cost | Mechanism |
 | --- | --- | --- |
-| Ingest accept | **O(log N)** | Redis GET O(1) → PG INSERT B-tree O(log N) → atomic claim UPDATE by PK O(log N) → Redis SET NX O(1) |
+| Ingest accept | **O(log N)** | Redis GET O(1) → depth COUNT for the 503 ceiling (index-assisted, O(live rows)) → PG INSERT B-tree O(log N) → atomic claim UPDATE by PK O(log N) → Redis SET NX O(1) |
 | Dedup hit via Redis | **O(1)** | one GET, zero PG reads; returns the stored eventId |
 | Dedup hit via PG (23505) | **O(log N)** | failed insert + index seek on the conflicting key |
 | Channel enqueue/dequeue | O(1) | bounded channel, wait-free |
@@ -165,12 +165,16 @@ Load tool: `tools/LoadGen` (`--rps --seconds --burst --dup`).
   N instances × 80 must stay under `max_connections` — scale wave
   item: PgBouncer or a raised limit.
 
-### Channel-full path (capacity 10 000)
+### Backpressure — two layers
 
-`Queue:Capacity` bounded channel, `TryEnqueue` fails when full → the
-handler **rolls the event back to `Pending`** and the sweeper picks
-it up on the next tick. Full queue = slower delivery, never a drop.
-Same rollback exists in the sweeper's own enqueue path.
+1. **Channel full** (capacity `Queue:Capacity` = 10 000): `TryEnqueue`
+   fails → the handler **rolls the event back to `Pending`** and the
+   sweeper picks it up on the next tick. Full channel = slower
+   delivery, never a drop. Same rollback in the sweeper's own enqueue.
+2. **PG queue depth ceiling** (`Queue:PendingThreshold` = 10 000):
+   undelivered count ≥ threshold → **503 reject** — an honest
+   backpressure signal (client retries; the engine never pretends
+   to accept).
 
 ### What breaks first (in order)
 

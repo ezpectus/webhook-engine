@@ -100,7 +100,7 @@ Properties that matter:
   produces an identical signature (dedup-friendly);
 - compare in constant time (`CryptographicOperations.FixedTimeEquals`)
   or you're open to a timing attack;
-- the secret is per-webhook, stored in `webhook_endpoints.Secret` —
+- the secret is per-webhook, stored in `Webhooks.Secret` —
   leaking one doesn't compromise the rest;
 - this is exactly GitHub's `X-Hub-Signature-256` — a proven pattern.
 

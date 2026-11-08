@@ -13,7 +13,7 @@ last-write-wins, attempt rows can double-number, status flip-flops.
 The send-dup stays (unavoidable); the *write* must become
 conditional.
 
-`ClaimVersion int` is already on `notification_events` (migration
+`ClaimVersion int` is already on `Events` (migration
 `AddEventClaimVersion` applied — nothing to scaffold).
 
 Mechanism: every lease transfer bumps the version; the worker's
@@ -131,7 +131,7 @@ t~15 B finishes → writes WHERE v=current → lands once
 ```
 
 PG check after: `AttemptCount` matches `count(*)` in
-`delivery_attempts` for that event, status terminal-consistent.
+`DeliveryAttempts` for that event, status terminal-consistent.
 Pre-fix you'd see the lost increment or doubled attempt number.
 
 ## Definition of done
