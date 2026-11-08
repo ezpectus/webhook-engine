@@ -46,7 +46,15 @@ address there, not in `api.ts` — every call is a relative URL.
 
 ## Files
 
-- `src/App.tsx` — the whole UI: polling loop, SignalR subscription, panels
-- `src/api.ts` — typed API surface (`Stats`, `Metrics`, `EngineEvent`, `EventDetail`, `DeadLetter`)
+- `src/App.tsx` — composition root: wires hooks to panels, owns
+  selected-event and filter state
+- `src/hooks/useDashboardData.ts` — the 2s poll (`Promise.all` over
+  the four read endpoints, keeps last good snapshot on failure)
+- `src/hooks/useStatusFeed.ts` — SignalR subscription + connection state
+- `src/components/` — `Header`, `StatusCards`, `MetricsBar`,
+  `EventsTable`, `AttemptsPanel`, `DeadLetters`, `LiveFeed`,
+  `primitives` (badges, copyable ids, http codes)
+- `src/status.ts` — shared status vocabulary (int ↔ name)
+- `src/api.ts` — typed API surface (`Stats`, `Metrics`, `EngineEvent`, `EventDetail`, `DeadLetter`); all fetches reject non-2xx before parsing
 - `nginx.conf` — production proxy for the compose deployment
 - `vite.config.ts` — dev proxy
