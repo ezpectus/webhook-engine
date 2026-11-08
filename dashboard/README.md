@@ -18,6 +18,7 @@ it performs is DLQ replay.
 | Dead letters | `GET /deadletters` | quarantined events + reason; **replay** button → `POST /deadletters/{id}/replay` (bypasses dedup, resets attempt budget); replayed rows stay visible as audit |
 | Live feed (50) | SignalR `/hubs/status`, message `"status"` | status transitions as the worker writes them, badge-colored |
 | Header | — | refresh timestamp + SignalR connection indicator |
+| **Playground** | `POST /webhooks` + `POST /events` | one click registers six chaos-mode demo webhooks (ok/500/429/slow/flap/drop); mode buttons + `send 1`/`send 10` fire real events — retries, DLQ and the feed light up live |
 
 Usability details: statuses are semantic badges (amber = retrying,
 red = dead-lettered, etc.); event ids are **click-to-copy**; event

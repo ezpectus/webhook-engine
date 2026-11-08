@@ -6,6 +6,14 @@ A real-time notification & webhook delivery engine built around one idea:
 It accepts events over HTTP and delivers them to subscribed webhook
 endpoints — reliably, under load, and honestly about failure.
 
+> **What this is:** a learning-driven build that grew into a working
+> system. Every guarantee boundary was designed, implemented, then
+> attacked with chaos failures until it held — and every decision,
+> bug and trade-off is written down (`PLAN.md`, `docs/`). It's for
+> anyone who wants to see dedup, backpressure, retries and DLQ
+> actually work, not just read the theory. **~120 files, ~9k lines
+> of source + docs.** Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## What it guarantees
 
 - **At-least-once delivery** — an accepted event is persisted before it's
@@ -58,7 +66,11 @@ Reasoning behind every ordering choice: [PLAN.md](PLAN.md).
 ## Dashboard
 
 Live ops panel — status cards, engine metrics, event/attempt
-drill-down, DLQ with one-click replay, SignalR live feed:
+drill-down, DLQ with one-click replay, SignalR live feed — plus a
+**Playground**: register the six MockReceiver chaos endpoints and
+fire real events by clicking `send 1`/`send 10`. Retries, dead
+letters and replay show up on screen within seconds — the fastest
+way to feel what the engine does:
 
 ![dashboard](docs/screenshots/dashboard.png)
 
@@ -96,9 +108,19 @@ cd dashboard && npm install && npm run dev # http://localhost:5173
 ```
 
 Sanity check: `curl localhost:8080/health` → `{"status":"ok",...}`.
+
+**Verify everything in one command** — the live smoke test walks
+the whole API surface (20 checks: validation, dedup same-id,
+chronological attempts, DLQ, replay, SignalR negotiate):
+
+```bash
+node tests/smoke.mjs                    # API on :5269
+API=http://localhost:8080 DASH=http://localhost:3000 node tests/smoke.mjs
+```
+
 To see the failure paths live, point a webhook at
 `http://localhost:5005/hook?mode=<one-of: 500, 429, slow, flap, drop>`
-(e.g. `?mode=500`) and watch the dashboard.
+(e.g. `?mode=500`) — or just use the dashboard Playground and watch.
 
 ## API surface
 
@@ -134,6 +156,27 @@ H-3 (lease-versioned claims) — H-1 (honest dedup window) shipped and
 verified live — plus the scale wave (Redis-backed limiter, leader
 election, multi-instance). See [docs/tasks.md](docs/tasks.md) for the
 backlog and [docs/next.md](docs/next.md) for the construction queue.
+
+## What building this actually trained
+
+- **Idempotency design** — key composition (`webhook:payload:bucket`),
+  window vs forever, why the stored value should be the original
+  event id, and how Redis-hit and PG-23505 duplicates differ.
+- **Durable-first ordering** — accept only after the row exists;
+  enqueue is an accelerator, never the source of truth.
+- **At-least-once acceptance** — a duplicate send is recoverable;
+  a lost event is not. Every "optimize" that risks loss is a bug.
+- **Retry scheduling** — capped exponential backoff + equal jitter,
+  versioned lazy deletion in a heap, PG `NextAttemptAt` as truth.
+- **Lease semantics** — InFlight timeout, stale reclaim, and the
+  parallel-dup edge that motivated `ClaimVersion` (H-3).
+- **Backpressure** — a full channel is a signal, not a queue;
+  honest 503 beats silent OOM.
+- **Boundary observability** — counters exactly where guarantees
+  live (`dedupHits`, `staleReclaims`, `sendsRetryable`), a SignalR
+  feed, and a dashboard strict enough to debug by screenshot.
+- **Honest engineering** — chaos-proven claims only; every failure
+  mode either got fixed or got documented in `docs/guide.md`.
 
 ## License
 
