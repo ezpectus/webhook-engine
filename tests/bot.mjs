@@ -38,6 +38,10 @@ const rget = (path) => fetch(`${RECEIVER}${path}`)
 
 const setMode = (m) => fetch(`${RECEIVER}/mode?m=${m}`, { method: 'POST' })
 
+// EventStatus serializes as a NUMBER on this API (no enum converter):
+// Pending=0 InFlight=1 RetryScheduled=2 Delivered=3 DeadLettered=4.
+const STATUS = { Delivered: 3, DeadLettered: 4 }
+
 // Poll GET /events/{id} until status or timeout. Returns the last seen event.
 async function waitStatus(id, want, timeoutMs) {
   const deadline = Date.now() + timeoutMs
@@ -46,7 +50,7 @@ async function waitStatus(id, want, timeoutMs) {
     const r = await get(`/events/${id}`)
     if (r.ok) {
       ev = await r.json()
-      if (ev.status === want) return ev
+      if (ev.status === STATUS[want]) return ev
     }
     await sleep(1000)
   }
@@ -75,8 +79,10 @@ ok('receiver: alive', rhealth.status === 'ok')
 
 // --- 1. happy path: post -> delivered at receiver ----------------------------
 await setMode('ok')
+// secret -> the sender must attach X-Webhook-Signature (HMAC-SHA256,
+// unsigned only when a webhook has no secret — that's by design).
 const whG = await (await post('/webhooks', {
-  url: `${HOOK}/hook`, rateLimitPerSecond: 50 })).json()
+  url: `${HOOK}/hook`, rateLimitPerSecond: 50, secret: 'bot-secret' })).json()
 ok('register: global-mode webhook', typeof whG.webhookId === 'string')
 
 const m1 = `${tag}-e1`
@@ -85,7 +91,7 @@ const e1 = await (await post('/events', {
 ok('e1: accepted', e1.status === 'accepted')
 
 const ev1 = await waitStatus(e1.eventId, 'Delivered', 30000)
-ok('e1: Delivered', ev1?.status === 'Delivered', `status=${ev1?.status}`)
+ok('e1: Delivered', ev1?.status === STATUS.Delivered, `status=${ev1?.status}`)
 const seen1 = await receiverHas(m1, 5000)
 ok('e1: body arrived at receiver', seen1 !== null)
 ok('e1: HMAC signature header present', seen1?.signature != null,
@@ -108,7 +114,7 @@ const m3 = `${tag}-e3`
 const e3 = await (await post('/events', {
   webhookId: whF.webhookId, payload: JSON.stringify({ marker: m3 }) })).json()
 const ev3 = await waitStatus(e3.eventId, 'Delivered', 60000)
-ok('flap: eventually Delivered', ev3?.status === 'Delivered',
+ok('flap: eventually Delivered', ev3?.status === STATUS.Delivered,
   `status=${ev3?.status} attempts=${ev3?.attemptCount}`)
 ok('flap: took retries', (ev3?.attemptCount ?? 0) >= 2, `attempts=${ev3?.attemptCount}`)
 
@@ -119,7 +125,7 @@ const e4 = await (await post('/events', {
   webhookId: whG.webhookId, payload: JSON.stringify({ marker: m4 }) })).json()
 // 5 attempts with 1+2+4+8s backoff + send time + jitter ≈ 20-40s.
 const ev4 = await waitStatus(e4.eventId, 'DeadLettered', 120000)
-ok('dlq: DeadLettered after max attempts', ev4?.status === 'DeadLettered',
+ok('dlq: DeadLettered after max attempts', ev4?.status === STATUS.DeadLettered,
   `status=${ev4?.status} attempts=${ev4?.attemptCount}`)
 
 const dl = await (await get('/deadletters')).json()
@@ -132,7 +138,8 @@ await setMode('ok')
 const rp = await post(`/deadletters/${e4.eventId}/replay`)
 ok('replay: accepted', rp.status === 202)
 const ev4r = await waitStatus(e4.eventId, 'Delivered', 30000)
-ok('replay: Delivered after heal', ev4r?.status === 'Delivered', `status=${ev4r?.status}`)
+ok('replay: Delivered after heal', ev4r?.status === STATUS.Delivered,
+  `status=${ev4r?.status}`)
 ok('replay: body arrived', (await receiverHas(m4, 5000)) !== null)
 
 // --- 6. metrics sanity ---------------------------------------------------------
@@ -141,8 +148,11 @@ ok('metrics: retry counter moved', metrics.counters.sendsRetryable > 0,
   `sendsRetryable=${metrics.counters.sendsRetryable}`)
 ok('metrics: dedup hits counted', metrics.counters.dedupHits > 0,
   `dedupHits=${metrics.counters.dedupHits}`)
-ok('metrics: no live dead letters left', metrics.dlq_live === 0 ||
-  !dl.find(d => d.eventId === e4.eventId && d.replayedAt === null))
+// Other live dead letters may exist (stale runs) — what matters is
+// OUR entry being marked replayed.
+const dl2 = await (await get('/deadletters')).json()
+ok('dlq: our entry marked replayed',
+  dl2.find(d => d.eventId === e4.eventId)?.replayedAt != null)
 
 // --- verdict -------------------------------------------------------------------
 console.log(failures === 0
