@@ -9,7 +9,12 @@
 //   slow    200 after a 15s pause (sender timeout is 10s → retryable)
 //   flap    alternates 500/200 — a "flapping" endpoint
 //   drop    never responds (conn-level)
+//   global  use the runtime mode set via POST /mode — lets a test bot
+//           flip one registered webhook between failing and ok without
+//           re-registering (needed to prove the DLQ→replay→deliver loop)
 //
+// POST /mode?m=X      — set the runtime mode used by ?mode=global (default ok)
+// GET  /mode          — current runtime mode
 // GET  /received      — last 200 received (body, time, ip)
 // GET  /health        — is the sink alive
 
@@ -17,6 +22,7 @@ var app = WebApplication.CreateBuilder(args).Build();
 
 var received = new System.Collections.Concurrent.ConcurrentQueue<object>();
 var flapCounter = 0;
+var globalMode = "ok";
 
 void Record(object entry)
 {
@@ -27,6 +33,7 @@ void Record(object entry)
 app.MapPost("/hook", async (HttpRequest req) =>
 {
     var mode = req.Query["mode"].ToString();
+    if (mode is "" or "global") mode = globalMode;
     var body = await new StreamReader(req.Body).ReadToEndAsync();
     var sig = req.Headers["X-Webhook-Signature"].ToString();
     Record(new { at = DateTimeOffset.UtcNow, mode = mode == "" ? "ok" : mode, signature = sig == "" ? null : sig, body });
@@ -46,6 +53,15 @@ app.MapPost("/hook", async (HttpRequest req) =>
 });
 
 app.MapGet("/received", () => Results.Ok(received.Reverse()));
+app.MapPost("/mode", (HttpRequest req) =>
+{
+    var m = req.Query["m"].ToString();
+    if (m is not ("ok" or "500" or "429" or "slow" or "flap" or "drop"))
+        return Results.BadRequest(new { error = "unknown mode" });
+    globalMode = m;
+    return Results.Ok(new { mode = globalMode });
+});
+app.MapGet("/mode", () => Results.Ok(new { mode = globalMode }));
 app.MapDelete("/received", () => { while (received.TryDequeue(out _)) { } return Results.NoContent(); });
 app.MapGet("/health", () => Results.Ok(new { status = "ok", received = received.Count }));
 
