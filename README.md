@@ -42,6 +42,22 @@ endpoints — reliably, under load, and honestly about failure.
 .NET (C#) · PostgreSQL + EF Core · Redis · SignalR · React + TypeScript ·
 docker-compose
 
+### Stack — every choice justified
+
+| Choice | Why it's here | Rejected |
+| --- | --- | --- |
+| **PostgreSQL** | The durability boundary — a row exists before 202 is sent; `IdempotencyKey` UNIQUE is the hard dedup edge; `NextAttemptAt` is the durable schedule | Redis-as-truth (restart = loss), a broker pretending to be a database |
+| **Redis** | Dedup fast path — a hit answers a duplicate with zero PG reads; future rate-limit state | Making Redis the boundary (its fail-open would then mean loss, not just slowdown) |
+| **Bounded `Channel`** | Backpressure is a policy, not a bigger buffer: full channel → honest 503, PG `Pending` + sweeper covers the gap | RabbitMQ/Kafka — a broker to operate for a lesson that's about queues, not brokers |
+| **EF Core, no `IRepository`** | Migrations are the schema truth; `DbContext` is used directly where hot paths need it | A repository wrapper that hides exactly the failure modes this project studies |
+| **SignalR + React dashboard** | Guarantees are verified by watching them — attempts, retries and DLQ visible live, chaos modes one click away | Polling REST; "read the logs" observability |
+| **MockReceiver + LoadGen** | Proof is a run, not a paragraph — chaos endpoints (`500/429/slow/flap/drop`) + real rps with mixed duplicates | "The unit tests pass" |
+| **docker-compose** | Postgres+Redis+API+dashboard+receiver in one command | k8s — orchestration theatre for a single host |
+
+Deliberately **not** in the stack: a message broker, a DTO/mapper
+layer, distributed-tracing infrastructure. Each would add a moving
+part without teaching anything about delivery guarantees.
+
 ## Architecture
 
 ```mermaid
