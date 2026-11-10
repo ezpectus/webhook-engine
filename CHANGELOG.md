@@ -9,6 +9,18 @@
 
 ---
 
+## 2026-11-09 — E2E-бот + /mode в MockReceiver [D]
+
+- `tests/bot.mjs` — полный цикл живьём (18 проверок): доставка до
+  приёмника + HMAC-подпись, дедуп под 10×параллелью, retry на flap,
+  DLQ по 500 → replay → Delivered, метрики. ~2 мин, exit 1 на FAIL.
+  Запуск: `HOOK_URL=http://mockreceiver:5005 node tests/bot.mjs`.
+- `tools/MockReceiver/Program.cs` — `POST /mode?m=X` + `?mode=global`:
+  один зарегистрированный вебхук флипается failing↔ok без ре-регистра
+  (иначе DLQ→replay→deliver не доказать).
+- Находки прогона (ожидания бота, не код): `EventStatus` едет числом
+  (Delivered=3, DeadLettered=4); подпись только при заданном `secret`.
+
 ## 2026-11-08 — H-2 + H-3: ядерные таски закрыты [U→D delegated]
 
 **Код** (`Endpoints.cs`, `DeliveryWorker.cs`, `SweeperService.cs`,
