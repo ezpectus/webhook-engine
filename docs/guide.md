@@ -66,7 +66,7 @@ SweeperService (every 2s locally, gentle)
 - **Residual dup at ingest** — one legal straddle: Redis down +
   identical POSTs on both sides of a bucket edge → different bucketed
   keys → both insert. Redis alive closes it; documented in
-  `dedup-flow.mmd` / PLAN.md boundary map.
+  `dedup-flow.mmd` / `docs/failure-map.md` boundary table.
 - **Loss after acceptance** — impossible: everything undelivered is
   a PG row, the sweeper picks up all `Pending`/`RetryScheduled`.
 - **Dup on delivery** — possible and legal: worker died after the 2xx

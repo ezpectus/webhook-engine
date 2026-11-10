@@ -9,7 +9,7 @@ endpoints — reliably, under load, and honestly about failure.
 > **What this is:** a learning-driven build that grew into a working
 > system. Every guarantee boundary was designed, implemented, then
 > attacked with chaos failures until it held — and every decision,
-> bug and trade-off is written down (`PLAN.md`, `docs/`). It's for
+> bug and trade-off is written down in `docs/`. It's for
 > anyone who wants to see dedup, backpressure, retries and DLQ
 > actually work, not just read the theory. **~140 files, ~9.9k lines
 > of source + docs.** Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -63,7 +63,8 @@ Full diagram set (dedup flow, request sequence, status state
 machine, ER schema): [docs/diagrams/system.md](docs/diagrams/system.md).
 The DB model explained — per-table/index rationale and measured
 load behavior: [docs/database.md](docs/database.md).
-Reasoning behind every ordering choice: [PLAN.md](PLAN.md).
+Reasoning behind every ordering choice and the evidence-backed
+boundary table: [docs/failure-map.md](docs/failure-map.md).
 
 ## Dashboard
 
@@ -90,10 +91,8 @@ tools/LoadGen/                 load generator (rps, burst, duplicate rate)
 tools/MockReceiver/            test webhook receiver with chaos modes (500/429/slow/flap/drop)
 tests/
   WebhookEngine.Tests          unit + chaos tests
-docs/                          architecture spec, task backlog, diagrams
-  guides/                      concept guides (EN): hands-on tasks, stack Q&A
-  ru/, guides/ru/              Russian originals of the translated docs
-PLAN.md                        data flow map + decision journal (ADR-style)
+docs/                          architecture spec, database rationale,
+                               failure-map (evidence table), diagrams
 ```
 
 ## Getting started
@@ -154,13 +153,22 @@ token bucket → signed send → backoff/jitter retries → DLQ + replay.
 lease expiry mid-send) — every guarantee held. Three LoadGen runs
 (2,055 / ~4,800 / 803 accepted events, duplicates mixed in) — zero
 loss after accept. The evidence-backed duplicate/loss map lives
-in [PLAN.md](PLAN.md#failure-boundary-map-where-duplicates-where-loss-proven-live).
+in [docs/failure-map.md](docs/failure-map.md).
 
-Remaining: hands-on tasks H-2 (client `Idempotency-Key` header) and
-H-3 (lease-versioned claims) — H-1 (honest dedup window) shipped and
-verified live — plus the scale wave (Redis-backed limiter, leader
-election, multi-instance). See [docs/tasks.md](docs/tasks.md) for the
-backlog and [docs/next.md](docs/next.md) for the construction queue.
+Shipped and verified live: H-1 (honest dedup window), H-2 (client
+`Idempotency-Key` header), H-3 (lease-versioned claims). Remaining:
+the scale wave — Redis-backed limiter, leader election,
+multi-instance.
+
+## Who built what
+
+The delivery-guarantee core — dedup keying and window, retry
+scheduler, token bucket, backpressure policy, DLQ semantics — was
+designed and written **by hand**, because that's where "at least
+once" is won or lost. The platform plumbing around it (ASP.NET
+skeleton, SignalR wiring, EF schema, dashboard, compose) was built
+with an AI pair under explicit, written-down rules; chaos scenarios
+were co-designed and every finding routed back into code or docs.
 
 ## What building this actually trained
 

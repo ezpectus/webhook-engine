@@ -75,3 +75,7 @@ pnpm-debug.log*
 !.vscode/settings.json
 Thumbs.db
 .DS_Store
+
+# Local workflow — agent rules & process docs stay off GitHub
+AGENTS.md
+.devin/

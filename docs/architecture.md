@@ -102,7 +102,7 @@ events ───> │ Ingest   │─> │ Dedup      │─> │ Queue        �
 - **Loss is not allowed**: an event counts as delivered only after
   ack; before ack it lives in the queue / retry / DLQ.
 - Open boundary questions (where exactly a dup/loss can occur) —
-  see `PLAN.md` (the proven boundary map lives there).
+  see `failure-map.md` (the proven boundary map lives there).
 
 ## DB schema (implemented — see `database.md` for the full model + cost)
 

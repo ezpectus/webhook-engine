@@ -10,8 +10,8 @@ and where loss could happen (and why it must not).
 - Engineers who want to *see* delivery guarantees work under real
   failure — not read a blog post about them.
 - People reviewing the code as a portfolio piece: every design
-  decision is written down in `PLAN.md` and `docs/`, including the
-  bugs found in review and how they were fixed.
+  decision is written down in `docs/` — architecture, the DB
+  rationale, and the failure-boundary map proven live.
 - Anyone who wants a playground: `docker compose up` gives you a
   full pipeline plus a dashboard where you can fire chaos-mode
   events and watch retries/DLQ happen live.
@@ -21,8 +21,7 @@ and where loss could happen (and why it must not).
 1. **The guarantee boundaries are sacred.** Durable-first ordering
    (PostgreSQL row before channel enqueue), the 23505 → duplicate
    contract, lease reclaim, replay semantics — changes here need a
-   written reason in `PLAN.md` and a test or live proof, not just
-   a diff.
+   written reason and a test or live proof, not just a diff.
 2. **Docs describe code as it is**, not as intended. Changing
    behavior without updating `docs/guide.md` / boundary maps is a
    rejected PR.
@@ -32,8 +31,7 @@ and where loss could happen (and why it must not).
 4. **Small commits, plain messages**, no tool attribution. Tests
    ship with code changes (`dotnet test` + `node tests/smoke.mjs`
    for live behavior).
-5. **English code comments**; docs exist in EN (authoritative) and
-   RU (process log — kept intentionally in `docs/ru/`).
+5. **English code comments and docs** — this repo is English-only.
 
 ## Local verification
 
@@ -46,9 +44,9 @@ node tests/smoke.mjs                   # 20 live checks
 
 ## Good first contributions
 
-- `docs/next.md` is the construction queue (scale wave: Redis rate
-  limiter, leader election, hash-ring wiring).
-- `docs/tasks.md` H-2/H-3 are scoped hands-on tickets with
-  walkthroughs in `docs/guides/`.
+- The scale wave is the open frontier: Redis-backed rate limiter,
+  leader election for the sweeper, multi-instance delivery.
 - More chaos modes for `tools/MockReceiver` (jitter, partial body,
   slow-then-flap) are always useful for demos.
+- A new row in `docs/failure-map.md` with the live proof behind it
+  beats ten lines of theory.

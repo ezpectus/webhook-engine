@@ -1,31 +1,30 @@
-# Диаграммы системы
+# System diagrams
 
-Файлы-источники (редактируемые): `mmd/` — mermaid (`system.mmd`
-архитектура, `db.mmd` ER-схема, `classes.mmd` карта классов,
-`dedup-flow.mmd` поток дедупликации H-1, `state-machine.mmd`
-статусы события, `sequence.mmd` жизненный цикл запроса); `io/` —
-draw.io (`system.drawio`, `db.drawio`, `classes.drawio`); `schema.sql`
-— DDL. Mermaid рендерится прямо на GitHub; drawio открывается в
-app.diagrams.net или расширением VS Code.
+Editable sources: `mmd/` — mermaid (`system.mmd` architecture,
+`db.mmd` ER schema, `classes.mmd` class map, `dedup-flow.mmd` the
+H-1 dedup flow, `state-machine.mmd` event statuses, `sequence.mmd`
+request lifecycle); `io/` — draw.io (`system.drawio`, `db.drawio`,
+`classes.drawio`); `schema.sql` — DDL. Mermaid renders directly on
+GitHub; drawio opens in app.diagrams.net or the VS Code extension.
 
-## Архитектура (компоненты)
+## Architecture (components)
 
 ```mermaid
 flowchart TB
-    subgraph Clients["Клиенты"]
+    subgraph Clients["Clients"]
         C1[Client services]
     end
 
-    subgraph Ingest["Приём"]
+    subgraph Ingest["Ingest"]
         API[Ingest API<br/>POST /events]
     end
 
-    subgraph Dur["Персистентность"]
+    subgraph Dur["Durability"]
         PG[(PostgreSQL<br/>events · attempts · dead_letters)]
         RDS[(Redis<br/>dedup keys · rate-limit state)]
     end
 
-    subgraph Pipe["Пайплайн доставки"]
+    subgraph Pipe["Delivery pipeline"]
         Q[(Bounded channel<br/>backpressure)]
         W[Worker pool]
         RL{Token bucket<br/>per webhook}
@@ -34,7 +33,7 @@ flowchart TB
         DLQ[(Dead letters)]
     end
 
-    subgraph Obs["Наблюдаемость"]
+    subgraph Obs["Observability"]
         SIG[SignalR hub]
         DASH[React dashboard]
     end
@@ -52,16 +51,16 @@ flowchart TB
     API -->|status| SIG
 ```
 
-## Data flow с путями сбоев
+## Data flow with failure paths
 
 ```mermaid
 flowchart LR
     C[Client] -->|POST /events| A[Ingest API]
-    A --> V{Валидация}
-    V -->|невалид| R4[400 reject]
+    A --> V{Validation}
+    V -->|invalid| R4[400 reject]
     V -->|ok| D{Dedup: Redis SET NX}
-    D -->|дубль| R2[200 + event id<br/>duplicate]
-    D -->|новое| DB[(PG: events · Pending)]
+    D -->|dup| R2[200 + event id<br/>duplicate]
+    D -->|new| DB[(PG: events · Pending)]
     DB --> Q[(Channel: bounded)]
     Q --> W[Worker pool]
     W --> RL{Rate limiter}
@@ -72,32 +71,34 @@ flowchart LR
     H -->|max attempts| DLQ[(DeadLetters + reason)]
 ```
 
-Красные зоны потери (см. `PLAN.md` — карта «дубль/потеря»):
-событие непотеряемо только после записи в `PG`. Всё, что до неё —
-либо отвергнуто клиенту, либо клиент ретраит сам.
+Loss zones (see [../failure-map.md](../failure-map.md) — the
+dup/loss table): an event is unlosable only once it sits in `PG`.
+Everything before that is either refused to the client or the
+client retries itself.
 
-## Dedup-поток (H-1, rolling-окно)
+## Dedup flow (H-1, rolling window)
 
 ```mermaid
 flowchart TD
-    A[POST /events] --> B{webhook + валидный JSON?}
-    B -- нет --> R4[400]
-    B -- да --> C["redisKey = sha256(wh:payload)<br/>pgKey = sha256(wh:payload:bucket)"]
+    A[POST /events] --> B{webhook + valid JSON?}
+    B -- no --> R4[400]
+    B -- yes --> C["redisKey = sha256(wh:payload)<br/>pgKey = sha256(wh:payload:bucket)"]
     C --> D{"GET dedup:&lt;redisKey&gt;"}
-    D -- "hit: eventId" --> R2["200 duplicate<br/>id из значения Redis, PG не тронута"]
+    D -- "hit: eventId" --> R2["200 duplicate<br/>id from Redis value, PG untouched"]
     D -- "miss / Redis down<br/>fail-open" --> E["INSERT IdempotencyKey = pgKey"]
-    E -- "23505" --> R5["200 duplicate<br/>жёсткая граница"]
+    E -- "23505" --> R5["200 duplicate<br/>hard boundary"]
     E -- ok --> F["claim InFlight → enqueue"]
-    F --> G["SET dedup:&lt;redisKey&gt; = eventId<br/>NX EX window — TTL от первого вида"]
+    F --> G["SET dedup:&lt;redisKey&gt; = eventId<br/>NX EX window — TTL from first sight"]
     G --> R3[202 accepted]
 ```
 
-Redis-маркер — быстрый путь (окно катится TTL от первого вида);
-бакетный PG-ключ — жёсткая граница окна (индекс не умеет «по времени»,
-время зашито в ключ). Остаточная деградация: Redis мёртв + два POST'а
-по разные стороны стыка бакета → оба вставятся — легальный дубль.
+The Redis marker is the fast path (window rolls on TTL from first
+sight); the bucketed PG key is the hard window boundary (an index
+can't be "by time", so time is baked into the key). Residual
+degradation: Redis dead + two POSTs on opposite sides of the bucket
+edge → both insert — a legal duplicate.
 
-## Жизненный цикл запроса (sequence)
+## Request lifecycle (sequence)
 
 ```mermaid
 sequenceDiagram
@@ -152,7 +153,7 @@ sequenceDiagram
     H-->>C: live feed update (dashboard)
 ```
 
-## Машина статусов (`EventStatus`)
+## Status machine (`EventStatus`)
 
 ```mermaid
 stateDiagram-v2
@@ -163,7 +164,7 @@ stateDiagram-v2
     InFlight --> Delivered : send 2xx<br/>attempt + DeliveredAt
     InFlight --> RetryScheduled : retryable fail<br/>AttemptCount below max<br/>NextAttemptAt = now + backoff
     InFlight --> DeadLettered : non-retryable (4xx, bad payload)<br/>or attempts exhausted
-    RetryScheduled --> InFlight : sweeper claim<br/>NextAttemptAt 2264 now
+    RetryScheduled --> InFlight : sweeper claim<br/>NextAttemptAt ≤ now
     InFlight --> Pending : lease expired<br/>stale reclaim (InFlightTimeout)
     DeadLettered --> Pending : manual replay<br/>AttemptCount → 0, bypass dedup
 
@@ -184,18 +185,18 @@ stateDiagram-v2
     end note
 ```
 
-## Схема БД (ER)
+## Database schema (ER)
 
 ```mermaid
 erDiagram
-    WebhookEndpoints ||--o{ NotificationEvents : "получает"
-    NotificationEvents ||--o{ DeliveryAttempts : "история"
-    NotificationEvents ||--o| DeadLetters : "терминал"
+    WebhookEndpoints ||--o{ NotificationEvents : "receives"
+    NotificationEvents ||--o{ DeliveryAttempts : "history"
+    NotificationEvents ||--o| DeadLetters : "terminal"
 
     WebhookEndpoints {
         uuid Id PK
         string Url "IDX"
-        string Secret "HMAC-ключ подписи"
+        string Secret "HMAC signing key"
         int RateLimitPerSecond "token bucket"
         bool IsActive
         timestamptz CreatedAt
@@ -204,15 +205,15 @@ erDiagram
     NotificationEvents {
         uuid Id PK
         uuid WebhookId FK
-        string IdempotencyKey "UNIQUE — граница dedup"
+        string IdempotencyKey "UNIQUE — dedup boundary"
         jsonb Payload
         int Status "Pending·InFlight·RetryScheduled·Delivered·DeadLettered"
         int AttemptCount
-        int ClaimVersion "lease-version для H-3 (optimistic claim)"
-        timestamptz NextAttemptAt "дurable-расписание; IDX(Status,NextAttemptAt)"
+        int ClaimVersion "lease version for H-3 (optimistic claim)"
+        timestamptz NextAttemptAt "durable schedule; IDX(Status,NextAttemptAt)"
         timestamptz DeliveredAt
         timestamptz CreatedAt
-        timestamptz UpdatedAt "lease-метка для stale-reclaim"
+        timestamptz UpdatedAt "lease mark for stale reclaim"
     }
 
     DeliveryAttempts {
@@ -220,7 +221,7 @@ erDiagram
         uuid EventId FK "IDX(EventId,AttemptNumber)"
         int AttemptNumber
         timestamptz AttemptedAt
-        int ResponseStatusCode "null при timeout/conn error"
+        int ResponseStatusCode "null on timeout/conn error"
         string Error
         bool Succeeded
         int DurationMs
@@ -229,18 +230,19 @@ erDiagram
     DeadLetters {
         uuid Id PK
         uuid EventId FK
-        string Reason "почему здесь — через неделю должно быть ясно"
+        string Reason "why it's here — must read clearly a week later"
         timestamptz DeadLetteredAt "IDX"
-        timestamptz ReplayedAt "null = живая запись DLQ"
+        timestamptz ReplayedAt "null = live DLQ entry"
     }
 ```
 
-Заметки по схеме:
-- `IdempotencyKey` UNIQUE — последняя граница правильности (Redis
-  fail-open → индекс решает). H-1: ключ несёт бакет времени —
-  unique держит окно, а не вечность.
-- `(Status, NextAttemptAt)` — кормит due-scan sweeper'а; L4 решён
-  EXPLAIN'ом (TASK-010) — полный индекс держим, partial не нужен.
-- `UpdatedAt` — и lease, и «когда что-то трогали» — двойная роль.
-- `ClaimVersion` — колонка под H-3: claim инкрементит её, воркер
-  пишет результат только под своей версией (stale-claim guard).
+Schema notes:
+- `IdempotencyKey` UNIQUE — the last correctness boundary (Redis
+  fail-open → the index decides). H-1: the key carries the time
+  bucket — unique holds the window, not eternity.
+- `(Status, NextAttemptAt)` — feeds the sweeper's due-scan; resolved
+  by EXPLAIN (TASK-010) — full index kept, partial not needed.
+- `UpdatedAt` — both lease and "when something was touched" —
+  a double role.
+- `ClaimVersion` — the H-3 column: claim increments it, a worker
+  writes its result only under its own version (stale-claim guard).
